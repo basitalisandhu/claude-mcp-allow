@@ -22,12 +22,46 @@ Annotations are untrusted hints. The MCP project's own [guidance on tool annotat
 
 Requires Node 20 or newer.
 
-```bash
-npx claude-mcp-allow                 # run without installing
-npm install -g claude-mcp-allow      # or install the command
+Every release is published by `publish-github-packages.yml` in two places on GitHub Packages: the npm package `@basitalisandhu/claude-mcp-allow` and the container image `ghcr.io/basitalisandhu/claude-mcp-allow`. The package is not on npmjs.com yet; when it is, it will use the same scoped name.
+
+### npm from GitHub Packages
+
+Point the `@basitalisandhu` scope at GitHub Packages in `~/.npmrc`:
+
+```
+@basitalisandhu:registry=https://npm.pkg.github.com
+//npm.pkg.github.com/:_authToken=${GITHUB_TOKEN}
 ```
 
-npm publication is pending; until the first release, run it from a clone:
+GitHub's npm registry asks for a token even to install public packages. That is a GitHub limitation, not a setting of this repository: use a personal access token (classic) with the `read:packages` scope, exported as `GITHUB_TOKEN`. Then:
+
+```bash
+npx @basitalisandhu/claude-mcp-allow                    # run without installing
+npm install -g @basitalisandhu/claude-mcp-allow@0.1.0   # or install the claude-mcp-allow command
+```
+
+### Container image
+
+The image is built for `linux/amd64` and `linux/arm64`, runs as the non-root `node` user (home `/home/node`), and is tagged with the version and `latest`; pin the version. The working directory is `/work`, so mount the project there:
+
+```bash
+docker run --rm -v "$PWD:/work" ghcr.io/basitalisandhu/claude-mcp-allow:0.1.0 --diff
+```
+
+The container sees only what you mount. To include user-scope servers, also mount `~/.claude.json` at `/home/node/.claude.json`. Stdio servers are started inside the container, so only servers whose command exists in the image (Node.js is available) can be reached; HTTP servers work as long as the container can reach them. For anything else, run the npm package on the host.
+
+The image is signed with cosign (keyless) and carries a build provenance attestation; an SPDX SBOM is attached to the GitHub release. To check it before running it:
+
+```bash
+cosign verify ghcr.io/basitalisandhu/claude-mcp-allow:0.1.0 \
+  --certificate-identity-regexp '^https://github.com/basitalisandhu/claude-mcp-allow/\.github/workflows/publish-github-packages\.yml@refs/tags/v' \
+  --certificate-oidc-issuer https://token.actions.githubusercontent.com
+gh attestation verify oci://ghcr.io/basitalisandhu/claude-mcp-allow:0.1.0 --owner basitalisandhu
+```
+
+To build the image from a checkout: `docker build -t claude-mcp-allow .`
+
+### From a clone
 
 ```bash
 git clone https://github.com/basitalisandhu/claude-mcp-allow && cd claude-mcp-allow
@@ -103,7 +137,7 @@ Each value is the decision and the SHA-256 of the tool's annotations plus its `r
 
 ## Sample output
 
-A project with two fixture servers from this repository in `.mcp.json` (one annotated, one not) and a user-scope server that needs OAuth, from `npx claude-mcp-allow` with no flags:
+A project with two fixture servers from this repository in `.mcp.json` (one annotated, one not) and a user-scope server that needs OAuth, from `npx @basitalisandhu/claude-mcp-allow` with no flags:
 
 ```text
 annotated  (project, .mcp.json)  7 tools: 2 allow, 5 ask
@@ -219,10 +253,10 @@ The file afterwards starts with the rule that was already there:
 `--check` straight away, then again after the annotated server was changed to report `readOnlyHint: false` for `get_user` (the fixture does this when `FIXTURE_DRIFT=flip` is set):
 
 ```text
-$ npx claude-mcp-allow --check
+$ npx @basitalisandhu/claude-mcp-allow --check
 ok: no drift against .claude/settings.local.json
 
-$ FIXTURE_DRIFT=flip npx claude-mcp-allow --check
+$ FIXTURE_DRIFT=flip npx @basitalisandhu/claude-mcp-allow --check
 drift  annotated: annotations of get_user changed; it is allowed but is no longer read-only (annotated but not marked read-only)
 1 drift finding(s) against .claude/settings.local.json
 ```
