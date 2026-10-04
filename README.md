@@ -35,7 +35,7 @@ GitHub's npm registry asks for a token even to install public packages. That is 
 
 ```bash
 npx @basitalisandhu/claude-mcp-allow                    # run without installing
-npm install -g @basitalisandhu/claude-mcp-allow@0.1.0   # or install the claude-mcp-allow command
+npm install -g @basitalisandhu/claude-mcp-allow@0.1.1   # or install the claude-mcp-allow command
 ```
 
 ### Container image
@@ -43,7 +43,7 @@ npm install -g @basitalisandhu/claude-mcp-allow@0.1.0   # or install the claude-
 The image is built for `linux/amd64` and `linux/arm64`, runs as the non-root `node` user (home `/home/node`), and is tagged with the version and `latest`; pin the version. The working directory is `/work`, so mount the project there:
 
 ```bash
-docker run --rm -v "$PWD:/work" ghcr.io/basitalisandhu/claude-mcp-allow:0.1.0 --diff
+docker run --rm -v "$PWD:/work" ghcr.io/basitalisandhu/claude-mcp-allow:0.1.1 --diff
 ```
 
 The container sees only what you mount. To include user-scope servers, also mount `~/.claude.json` at `/home/node/.claude.json`. Stdio servers are started inside the container, so only servers whose command exists in the image (Node.js is available) can be reached; HTTP servers work as long as the container can reach them. For anything else, run the npm package on the host.
@@ -51,10 +51,10 @@ The container sees only what you mount. To include user-scope servers, also moun
 The image is signed with cosign (keyless) and carries a build provenance attestation; an SPDX SBOM is attached to the GitHub release. To check it before running it:
 
 ```bash
-cosign verify ghcr.io/basitalisandhu/claude-mcp-allow:0.1.0 \
+cosign verify ghcr.io/basitalisandhu/claude-mcp-allow:0.1.1 \
   --certificate-identity-regexp '^https://github.com/basitalisandhu/claude-mcp-allow/\.github/workflows/publish-github-packages\.yml@refs/tags/v' \
   --certificate-oidc-issuer https://token.actions.githubusercontent.com
-gh attestation verify oci://ghcr.io/basitalisandhu/claude-mcp-allow:0.1.0 --owner basitalisandhu
+gh attestation verify oci://ghcr.io/basitalisandhu/claude-mcp-allow:0.1.1 --owner basitalisandhu
 ```
 
 To build the image from a checkout: `docker build -t claude-mcp-allow .`
@@ -117,7 +117,7 @@ Rules are appended to `permissions.allow` and `permissions.ask`, and a sibling k
 
 ```json
 "claudeMcpAllow": {
-  "generatedBy": "claude-mcp-allow 0.1.0",
+  "generatedBy": "claude-mcp-allow 0.1.1",
   "generatedAt": "2026-10-03T22:38:08.944Z",
   "heuristic": false,
   "servers": {

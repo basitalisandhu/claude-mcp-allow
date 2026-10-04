@@ -71,7 +71,7 @@
     "disabled-one"
   ],
   "claudeMcpAllow": {
-    "generatedBy": "claude-mcp-allow 0.1.0",
+    "generatedBy": "claude-mcp-allow 0.1.1",
     "generatedAt": "2026-10-03T00:00:00.000Z",
     "heuristic": false,
     "servers": {

@@ -1,6 +1,6 @@
 {
   "name": "@basitalisandhu/claude-mcp-allow",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Generate least-privilege Claude Code permission rules for MCP tools from their live annotations, write them into settings files, and detect drift.",
   "license": "MIT",
   "author": "Muhammad Basit Ali",
