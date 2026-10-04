@@ -1,0 +1,142 @@
+{
+  "$schema": "https://json.schemastore.org/claude-code-settings.json",
+  "permissions": {
+    "deny": [
+      "Read(./.env)"
+    ],
+    "allow": [
+      "Bash(npm test)",
+      "mcp__annotated__delete_item",
+      "mcp__annotated__get_default",
+      "mcp__annotated__get_user",
+      "mcp__annotated__list_items",
+      "mcp__local-only__get_user",
+      "mcp__local-only__list_items",
+      "mcp__plugin_db-tools_database__get_user",
+      "mcp__plugin_db-tools_database__list_items"
+    ],
+    "ask": [
+      "mcp__annotated__delete_item",
+      "mcp__annotated__get_status",
+      "mcp__annotated__grant_access",
+      "mcp__annotated__read_and_wipe",
+      "mcp__annotated__update_item",
+      "mcp__local-only__delete_item",
+      "mcp__local-only__get_status",
+      "mcp__local-only__grant_access",
+      "mcp__local-only__read_and_wipe",
+      "mcp__local-only__update_item",
+      "mcp__plugin_db-tools_database__delete_item",
+      "mcp__plugin_db-tools_database__get_status",
+      "mcp__plugin_db-tools_database__grant_access",
+      "mcp__plugin_db-tools_database__read_and_wipe",
+      "mcp__plugin_db-tools_database__update_item",
+      "mcp__shared__count_rows",
+      "mcp__shared__delete_all",
+      "mcp__shared__fetch-url",
+      "mcp__shared__get_consent",
+      "mcp__shared__get_string_flag",
+      "mcp__shared__get_weather",
+      "mcp__shared__getdata",
+      "mcp__shared__list_files",
+      "mcp__shared__lookup_user",
+      "mcp__shared__query_db",
+      "mcp__shared__run_job",
+      "mcp__shared__search_docs",
+      "mcp__shared__send_email",
+      "mcp__shared__show-status",
+      "mcp__shared__update_record",
+      "mcp__unannotated__count_rows",
+      "mcp__unannotated__delete_all",
+      "mcp__unannotated__fetch-url",
+      "mcp__unannotated__get_consent",
+      "mcp__unannotated__get_string_flag",
+      "mcp__unannotated__get_weather",
+      "mcp__unannotated__getdata",
+      "mcp__unannotated__list_files",
+      "mcp__unannotated__lookup_user",
+      "mcp__unannotated__query_db",
+      "mcp__unannotated__run_job",
+      "mcp__unannotated__search_docs",
+      "mcp__unannotated__send_email",
+      "mcp__unannotated__show-status",
+      "mcp__unannotated__update_record"
+    ]
+  },
+  "enabledMcpjsonServers": [
+    "annotated",
+    "shared"
+  ],
+  "disabledMcpjsonServers": [
+    "disabled-one"
+  ],
+  "claudeMcpAllow": {
+    "generatedBy": "claude-mcp-allow 0.1.0",
+    "generatedAt": "2026-10-03T00:00:00.000Z",
+    "heuristic": false,
+    "servers": {
+      "local-only": {
+        "get_user": "allow:cd6fc3f14d1a476831d8b3ad5283d55120abdc84f8fdff6a2b040e092f81afcc",
+        "list_items": "allow:bd113c63648a554f488e13d78f5f7dea1b20c2b1023c260d768745bdd07b93a7",
+        "delete_item": "ask:8c2fe572a84b307ba8332b68b40a6b8ccb02f58b7b81e61943e7ac03862756fd",
+        "update_item": "ask:1d4b3831286a7a55e56e9c24a767777e2a7141104e2e19728ebae80557ceb8d0",
+        "read_and_wipe": "ask:b28502557df29b0175e3a2dd2598319f013b53e5fb8ea46f482b0276912cb1a4",
+        "grant_access": "ask:5fccf9241f71cd7ba2492a3b492cb1e6ca45a7db1d1dc5bfffab0a32c5e16a3f",
+        "get_status": "ask:664da7462c39b3b21046d316901b8917e79aadd50f8893b93da9f562a75bdfe7"
+      },
+      "annotated": {
+        "get_user": "allow:cd6fc3f14d1a476831d8b3ad5283d55120abdc84f8fdff6a2b040e092f81afcc",
+        "list_items": "allow:bd113c63648a554f488e13d78f5f7dea1b20c2b1023c260d768745bdd07b93a7",
+        "delete_item": "ask:8c2fe572a84b307ba8332b68b40a6b8ccb02f58b7b81e61943e7ac03862756fd",
+        "update_item": "ask:1d4b3831286a7a55e56e9c24a767777e2a7141104e2e19728ebae80557ceb8d0",
+        "read_and_wipe": "ask:b28502557df29b0175e3a2dd2598319f013b53e5fb8ea46f482b0276912cb1a4",
+        "grant_access": "ask:5fccf9241f71cd7ba2492a3b492cb1e6ca45a7db1d1dc5bfffab0a32c5e16a3f",
+        "get_status": "ask:664da7462c39b3b21046d316901b8917e79aadd50f8893b93da9f562a75bdfe7",
+        "get_default": "allow:bd113c63648a554f488e13d78f5f7dea1b20c2b1023c260d768745bdd07b93a7"
+      },
+      "shared": {
+        "get_weather": "ask:97202ead0241add4a798bcee407b817e9c6cd307019cfcfef83e1d5b1ba4bfc6",
+        "list_files": "ask:97202ead0241add4a798bcee407b817e9c6cd307019cfcfef83e1d5b1ba4bfc6",
+        "search_docs": "ask:97202ead0241add4a798bcee407b817e9c6cd307019cfcfef83e1d5b1ba4bfc6",
+        "fetch-url": "ask:97202ead0241add4a798bcee407b817e9c6cd307019cfcfef83e1d5b1ba4bfc6",
+        "lookup_user": "ask:97202ead0241add4a798bcee407b817e9c6cd307019cfcfef83e1d5b1ba4bfc6",
+        "count_rows": "ask:97202ead0241add4a798bcee407b817e9c6cd307019cfcfef83e1d5b1ba4bfc6",
+        "show-status": "ask:97202ead0241add4a798bcee407b817e9c6cd307019cfcfef83e1d5b1ba4bfc6",
+        "query_db": "ask:97202ead0241add4a798bcee407b817e9c6cd307019cfcfef83e1d5b1ba4bfc6",
+        "getdata": "ask:97202ead0241add4a798bcee407b817e9c6cd307019cfcfef83e1d5b1ba4bfc6",
+        "send_email": "ask:97202ead0241add4a798bcee407b817e9c6cd307019cfcfef83e1d5b1ba4bfc6",
+        "delete_all": "ask:97202ead0241add4a798bcee407b817e9c6cd307019cfcfef83e1d5b1ba4bfc6",
+        "update_record": "ask:97202ead0241add4a798bcee407b817e9c6cd307019cfcfef83e1d5b1ba4bfc6",
+        "run_job": "ask:97202ead0241add4a798bcee407b817e9c6cd307019cfcfef83e1d5b1ba4bfc6",
+        "get_consent": "ask:7374c788731251fe954abeb4100cd34e5b8fabf7ad687da99c2ff14a50a264f4",
+        "get_string_flag": "ask:97202ead0241add4a798bcee407b817e9c6cd307019cfcfef83e1d5b1ba4bfc6"
+      },
+      "unannotated": {
+        "get_weather": "ask:97202ead0241add4a798bcee407b817e9c6cd307019cfcfef83e1d5b1ba4bfc6",
+        "list_files": "ask:97202ead0241add4a798bcee407b817e9c6cd307019cfcfef83e1d5b1ba4bfc6",
+        "search_docs": "ask:97202ead0241add4a798bcee407b817e9c6cd307019cfcfef83e1d5b1ba4bfc6",
+        "fetch-url": "ask:97202ead0241add4a798bcee407b817e9c6cd307019cfcfef83e1d5b1ba4bfc6",
+        "lookup_user": "ask:97202ead0241add4a798bcee407b817e9c6cd307019cfcfef83e1d5b1ba4bfc6",
+        "count_rows": "ask:97202ead0241add4a798bcee407b817e9c6cd307019cfcfef83e1d5b1ba4bfc6",
+        "show-status": "ask:97202ead0241add4a798bcee407b817e9c6cd307019cfcfef83e1d5b1ba4bfc6",
+        "query_db": "ask:97202ead0241add4a798bcee407b817e9c6cd307019cfcfef83e1d5b1ba4bfc6",
+        "getdata": "ask:97202ead0241add4a798bcee407b817e9c6cd307019cfcfef83e1d5b1ba4bfc6",
+        "send_email": "ask:97202ead0241add4a798bcee407b817e9c6cd307019cfcfef83e1d5b1ba4bfc6",
+        "delete_all": "ask:97202ead0241add4a798bcee407b817e9c6cd307019cfcfef83e1d5b1ba4bfc6",
+        "update_record": "ask:97202ead0241add4a798bcee407b817e9c6cd307019cfcfef83e1d5b1ba4bfc6",
+        "run_job": "ask:97202ead0241add4a798bcee407b817e9c6cd307019cfcfef83e1d5b1ba4bfc6",
+        "get_consent": "ask:7374c788731251fe954abeb4100cd34e5b8fabf7ad687da99c2ff14a50a264f4",
+        "get_string_flag": "ask:97202ead0241add4a798bcee407b817e9c6cd307019cfcfef83e1d5b1ba4bfc6"
+      },
+      "plugin_db-tools_database": {
+        "get_user": "allow:cd6fc3f14d1a476831d8b3ad5283d55120abdc84f8fdff6a2b040e092f81afcc",
+        "list_items": "allow:bd113c63648a554f488e13d78f5f7dea1b20c2b1023c260d768745bdd07b93a7",
+        "delete_item": "ask:8c2fe572a84b307ba8332b68b40a6b8ccb02f58b7b81e61943e7ac03862756fd",
+        "update_item": "ask:1d4b3831286a7a55e56e9c24a767777e2a7141104e2e19728ebae80557ceb8d0",
+        "read_and_wipe": "ask:b28502557df29b0175e3a2dd2598319f013b53e5fb8ea46f482b0276912cb1a4",
+        "grant_access": "ask:5fccf9241f71cd7ba2492a3b492cb1e6ca45a7db1d1dc5bfffab0a32c5e16a3f",
+        "get_status": "ask:664da7462c39b3b21046d316901b8917e79aadd50f8893b93da9f562a75bdfe7"
+      }
+    }
+  }
+}

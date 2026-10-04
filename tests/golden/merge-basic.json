@@ -1,0 +1,38 @@
+{
+    "$schema": "https://json.schemastore.org/claude-code-settings.json",
+    "permissions": {
+        "deny": [
+            "Read(./.env)",
+            "mcp__s1__denied"
+        ],
+        "allow": [
+            "Bash(npm test)",
+            "mcp__s1__by_hand",
+            "mcp__s1__get_a",
+            "mcp__s2__list_c"
+        ],
+        "ask": [
+            "mcp__s1__by_hand",
+            "mcp__s1__delete_b"
+        ]
+    },
+    "enabledMcpjsonServers": [
+        "s1"
+    ],
+    "claudeMcpAllow": {
+        "generatedBy": "claude-mcp-allow 0.1.0",
+        "generatedAt": "2026-10-03T00:00:00.000Z",
+        "heuristic": false,
+        "servers": {
+            "s1": {
+                "get_a": "allow:bd113c63648a554f488e13d78f5f7dea1b20c2b1023c260d768745bdd07b93a7",
+                "denied": "allow:bd113c63648a554f488e13d78f5f7dea1b20c2b1023c260d768745bdd07b93a7",
+                "by_hand": "ask:8c2fe572a84b307ba8332b68b40a6b8ccb02f58b7b81e61943e7ac03862756fd",
+                "delete_b": "ask:8c2fe572a84b307ba8332b68b40a6b8ccb02f58b7b81e61943e7ac03862756fd"
+            },
+            "s2": {
+                "list_c": "allow:bd113c63648a554f488e13d78f5f7dea1b20c2b1023c260d768745bdd07b93a7"
+            }
+        }
+    }
+}

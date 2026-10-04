@@ -1,0 +1,72 @@
+# Publishes to npm with provenance when a v* tag is pushed.
+#
+# One-time setup by the repository owner:
+#   1. Create the "npm" environment in this repository (Settings, Environments) and
+#      optionally require a reviewer on it.
+#   2. Either add this repository and the workflow file "release.yml" as a trusted
+#      publisher of the claude-mcp-allow package on npmjs.com (no secret needed; the
+#      `id-token: write` permission lets npm verify the GitHub OIDC token, and the
+#      "Upgrade npm" step provides the npm 11.5.1 or newer that trusted publishing needs),
+#      or store a granular automation token with publish rights as the repository
+#      secret NPM_TOKEN.
+#   3. Bump the version in package.json, add the CHANGELOG entry, then
+#      git tag v0.1.0 && git push --tags
+name: Release
+
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: read
+
+jobs:
+  publish:
+    name: Publish to npm
+    runs-on: ubuntu-latest
+    environment: npm
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          registry-url: https://registry.npmjs.org
+          cache: npm
+      - name: Upgrade npm (trusted publishing needs 11.5.1 or newer)
+        run: npm install -g npm@latest && npm --version
+      - name: Install
+        run: npm ci
+      - name: Check the tag matches the package version
+        run: |
+          version=$(node -p "require('./package.json').version")
+          test "v$version" = "${GITHUB_REF_NAME}" || { echo "tag ${GITHUB_REF_NAME} does not match version $version"; exit 1; }
+      - name: Build and test
+        run: npm test
+      - name: Publish with provenance
+        run: npm publish --provenance --access public
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+
+  release:
+    name: Create GitHub release
+    needs: publish
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - name: Extract release notes from CHANGELOG.md
+        run: |
+          version="${GITHUB_REF_NAME#v}"
+          awk -v ver="$version" '
+            /^## / { if (found) exit; if (index($0, "[" ver "]")) { found=1; next } }
+            found { print }
+          ' CHANGELOG.md > notes.md
+          if [ ! -s notes.md ]; then echo "Release $GITHUB_REF_NAME" > notes.md; fi
+      - name: Create release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release create "$GITHUB_REF_NAME" --title "$GITHUB_REF_NAME" --notes-file notes.md
