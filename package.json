@@ -1,5 +1,5 @@
 {
-  "name": "claude-mcp-allow",
+  "name": "@basitalisandhu/claude-mcp-allow",
   "version": "0.1.0",
   "description": "Generate least-privilege Claude Code permission rules for MCP tools from their live annotations, write them into settings files, and detect drift.",
   "license": "MIT",
@@ -61,7 +61,7 @@
     "vitest": "^4.1.11"
   },
   "publishConfig": {
-    "access": "public",
-    "provenance": true
+    "registry": "https://npm.pkg.github.com",
+    "access": "public"
   }
 }

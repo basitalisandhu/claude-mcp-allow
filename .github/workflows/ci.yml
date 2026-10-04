@@ -33,6 +33,22 @@ jobs:
           npm pack
           mkdir -p /tmp/smoke && cd /tmp/smoke
           npm init -y >/dev/null
-          npm install "$GITHUB_WORKSPACE"/claude-mcp-allow-*.tgz
+          npm install "$GITHUB_WORKSPACE"/basitalisandhu-claude-mcp-allow-*.tgz
           npx claude-mcp-allow --version
           npx claude-mcp-allow --help | head -1
+
+  container-build:
+    name: Build the container image and run it
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Build the image, print --help and run it on an empty project
+        run: |
+          docker build --build-arg VERSION=ci -t claude-mcp-allow:ci .
+          docker run --rm claude-mcp-allow:ci --help > help.txt && grep "^Usage" help.txt
+          docker run --rm claude-mcp-allow:ci --version
+          mkdir -p "$RUNNER_TEMP/empty"
+          docker run --rm -v "$RUNNER_TEMP/empty:/work:ro" claude-mcp-allow:ci > out.json
+          grep -q '"permissions"' out.json

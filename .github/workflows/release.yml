@@ -11,6 +11,13 @@
 #      secret NPM_TOKEN.
 #   3. Bump the version in package.json, add the CHANGELOG entry, then
 #      git tag v0.1.0 && git push --tags
+#
+# Off by default. GitHub Packages publishing (publish-github-packages.yml) runs on the same tags, so this
+# workflow only runs once npmjs.com is set up: set the repository variable NPMJS_PUBLISH to "true"
+# (Settings > Secrets and variables > Actions > Variables) after configuring trusted publishing or NPM_TOKEN.
+# The --registry flag below overrides publishConfig.registry, which points at GitHub Packages.
+# The package name on npmjs.com is the scoped @basitalisandhu/claude-mcp-allow; the unscoped name
+# claude-mcp-allow is not used yet and can be claimed later if wanted.
 name: Release
 
 on:
@@ -23,6 +30,7 @@ permissions:
 jobs:
   publish:
     name: Publish to npm
+    if: vars.NPMJS_PUBLISH == 'true'
     runs-on: ubuntu-latest
     environment: npm
     permissions:
@@ -46,13 +54,14 @@ jobs:
       - name: Build and test
         run: npm test
       - name: Publish with provenance
-        run: npm publish --provenance --access public
+        run: npm publish --provenance --access public --registry https://registry.npmjs.org
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
 
   release:
     name: Create GitHub release
     needs: publish
+    if: vars.NPMJS_PUBLISH == 'true'
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -66,7 +75,12 @@ jobs:
             found { print }
           ' CHANGELOG.md > notes.md
           if [ ! -s notes.md ]; then echo "Release $GITHUB_REF_NAME" > notes.md; fi
-      - name: Create release
+      - name: Create release (skipped if publish-github-packages.yml created it first)
         env:
           GH_TOKEN: ${{ github.token }}
-        run: gh release create "$GITHUB_REF_NAME" --title "$GITHUB_REF_NAME" --notes-file notes.md
+        run: |
+          if gh release view "$GITHUB_REF_NAME" >/dev/null 2>&1; then
+            echo "Release $GITHUB_REF_NAME already exists"
+          else
+            gh release create "$GITHUB_REF_NAME" --title "$GITHUB_REF_NAME" --notes-file notes.md
+          fi
