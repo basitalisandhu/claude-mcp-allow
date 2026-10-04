@@ -2,8 +2,6 @@
 
 Generate `permissions.allow` and `permissions.ask` rules for every MCP tool Claude Code can reach, from the annotations each server reports on `tools/list`: a tool that says `readOnlyHint: true` (and not `destructiveHint: true`) gets an `allow` rule, everything else gets an `ask` rule, one exact `mcp__<server>__<tool>` rule per tool and never a glob. `--write` merges the rules into the settings file you choose, `--diff` shows what would change, and `--check` reconnects later and exits 1 when a server's annotations have drifted from the rules you saved.
 
-Part of [Masoon](https://github.com/basitalisandhu/masoon) ([docs](https://basitalisandhu.github.io/masoon/)), open-source trust infrastructure for AI agents: who they are, what they may touch, and proof of what they did.
-
 [![CI](https://github.com/basitalisandhu/claude-mcp-allow/actions/workflows/ci.yml/badge.svg)](https://github.com/basitalisandhu/claude-mcp-allow/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 [![Node 20+](https://img.shields.io/badge/node-20%2B-blue.svg)](package.json)
@@ -289,7 +287,8 @@ The suite starts the two stdio fixtures (`tests/fixtures/annotated-server.mjs`, 
 
 ## Sibling projects
 
-- [masoon](https://github.com/basitalisandhu/masoon): the platform front door, with the [docs site](https://basitalisandhu.github.io/masoon/).
+More tools by the same author: https://github.com/basitalisandhu
+
 - [agent-security-skills](https://github.com/basitalisandhu/agent-security-skills): Claude Code plugin and agentskills-compatible skill pack for agent security reviews.
 - [mcp-tools-lint](https://github.com/basitalisandhu/mcp-tools-lint): lint an MCP server's `tools/list` for schema dialect, annotation and naming problems before a client rejects it.
 - [agent-threat-model](https://github.com/basitalisandhu/agent-threat-model): threat modeling for AI agents from a YAML description.
