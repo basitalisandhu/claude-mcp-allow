@@ -6,6 +6,51 @@ import { ROOT, expectGolden, makeFakeEnv, normalizeGeneratedAt, readJson, runCli
 const RULE = /^mcp__[^*]+__[^*]+$/;
 
 describe('claude-mcp-allow CLI', () => {
+  it('refuses pruning with incomplete configuration and preserves the settings bytes', async () => {
+    const isolated = makeFakeEnv();
+    try {
+      const file = path.join(isolated.project, '.mcp.json');
+      writeFileSync(file, '{invalid');
+      const settings = path.join(isolated.project, '.claude', 'settings.local.json');
+      const before = readFileSync(settings);
+      const result = await runCli(['--write', '--prune'], isolated);
+      expect(result.code).toBe(2);
+      expect(result.stderr).toContain('refusing --prune');
+      expect(readFileSync(settings)).toEqual(before);
+    } finally {
+      isolated.cleanup();
+    }
+  });
+  it('shows pruning in a read-only diff and requires opt-in for user-scope removal', async () => {
+    const settings = {
+      permissions: { allow: ['mcp__other_project__read', 'mcp__other_project__manual'], ask: ['mcp__other_project__write'] },
+      claudeMcpAllow: {
+        generatedBy: 'claude-mcp-allow 0.1.0', generatedAt: '', heuristic: false,
+        servers: { other_project: { read: 'allow:old', write: 'ask:old' } },
+      },
+    };
+    const isolated = makeFakeEnv({ userSettings: settings });
+    try {
+      const file = path.join(isolated.home, '.claude', 'settings.json');
+      const plain = await runCli(['--server', 'annotated', '--scope', 'user', '--write'], isolated);
+      expect(plain.code).toBe(0);
+      expect(readJson(file).claudeMcpAllow.servers.other_project).toBeDefined();
+      const bytes = readFileSync(file);
+      const diff = await runCli(['--server', 'annotated', '--scope', 'user', '--diff', '--prune'], isolated);
+      expect(diff.code).toBe(0);
+      expect(diff.stdout).toContain('- allow mcp__other_project__read');
+      expect(diff.stdout).toContain('- ask   mcp__other_project__write');
+      expect(readFileSync(file)).toEqual(bytes);
+      const pruned = await runCli(['--server', 'annotated', '--scope', 'user', '--write', '--prune'], isolated);
+      expect(pruned.code).toBe(0);
+      expect(pruned.stderr).toContain('pruned other_project: 2 rules');
+      const result = readJson(file);
+      expect(result.claudeMcpAllow.servers.other_project).toBeUndefined();
+      expect(result.permissions.allow).toContain('mcp__other_project__manual');
+    } finally {
+      isolated.cleanup();
+    }
+  });
   let env: FakeEnv;
   beforeAll(() => {
     env = makeFakeEnv();
@@ -19,6 +64,8 @@ describe('claude-mcp-allow CLI', () => {
     expect(bad.code).toBe(2);
     expect(bad.stderr).toContain('unknown argument');
     expect((await runCli(['--scope', 'global'], env)).code).toBe(2);
+    expect((await runCli(['--prune'], env)).code).toBe(2);
+    expect((await runCli(['--prune', '--check'], env)).code).toBe(2);
   });
 
   it('proposes allow and ask rules from live annotations (golden) and explains each decision', async () => {

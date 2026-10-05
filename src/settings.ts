@@ -101,6 +101,8 @@ export interface MergeInput {
   plan: Plan;
   now: string;
   version: string;
+  prune?: boolean;
+  configuredServers?: string[];
 }
 
 export interface RuleDelta {
@@ -115,6 +117,7 @@ export interface MergeResult {
   removed: RuleDelta;
   warnings: string[];
   changed: boolean;
+  pruned: { server: string; rules: number }[];
 }
 
 function stringArray(value: unknown): string[] {
@@ -180,8 +183,10 @@ export function mergeIntoSettings(file: SettingsFile, input: MergeInput): MergeR
   const data: Record<string, unknown> = structuredClone(file.data);
   const processed = input.plan.reports.filter((r) => r.status === 'listed').map((r) => r.server.ruleServer);
   const oldMarker = readMarker(data);
-  const previousAllow = markerRules(oldMarker, processed, 'allow');
-  const previousAsk = markerRules(oldMarker, processed, 'ask');
+  const configured = new Set(input.configuredServers ?? input.plan.reports.map((r) => r.server.ruleServer));
+  const stale = input.prune ? Object.keys(oldMarker?.servers ?? {}).filter((server) => !configured.has(server)) : [];
+  const previousAllow = markerRules(oldMarker, [...processed, ...stale], 'allow');
+  const previousAsk = markerRules(oldMarker, [...processed, ...stale], 'ask');
   const newAllow = new Set(input.plan.allow);
   const newAsk = new Set(input.plan.ask);
 
@@ -235,6 +240,7 @@ export function mergeIntoSettings(file: SettingsFile, input: MergeInput): MergeR
     fresh[report.server.ruleServer] = tools;
   }
   for (const [server, tools] of Object.entries(oldMarker?.servers ?? {})) {
+    if (stale.includes(server)) continue;
     servers[server] = fresh[server] ?? tools;
   }
   for (const [server, tools] of Object.entries(fresh)) {
@@ -253,7 +259,15 @@ export function mergeIntoSettings(file: SettingsFile, input: MergeInput): MergeR
     added.allow.length + added.ask.length + removed.allow.length + removed.ask.length > 0 ||
     JSON.stringify(oldMarker?.servers ?? {}) !== JSON.stringify(servers) ||
     (oldMarker?.heuristic ?? false) !== marker.heuristic;
-  return { data, text, added, removed, warnings, changed };
+  const pruned = stale.map((server) => {
+    const allowRules = markerRules(oldMarker, [server], 'allow');
+    const askRules = markerRules(oldMarker, [server], 'ask');
+    return {
+      server,
+      rules: removed.allow.filter((r) => allowRules.has(r)).length + removed.ask.filter((r) => askRules.has(r)).length,
+    };
+  });
+  return { data, text, added, removed, warnings, changed, pruned };
 }
 
 /** Rules in `permissions.allow` of a settings document that name an MCP tool. */

@@ -80,6 +80,7 @@ claude-mcp-allow [--cwd dir] [--scope local|project|user] [--heuristic] [--write
 | `--heuristic` | Also allow unannotated tools whose name matches `^(get\|list\|read\|search\|find\|fetch\|describe\|show\|query\|count\|lookup)[_-]`. Annotated tools are never affected. |
 | `--write` | Merge the proposed rules into the settings file for `--scope`. Existing keys, key order, indentation and every rule the tool did not write are preserved. |
 | `--diff` | Print the rules `--write` would add and remove, as `+ allow`, `+ ask`, `- allow` and `- ask` lines. Combine with `--write` to see and apply in one run. |
+| `--prune` | With `--write` or `--diff`, remove only marker-recorded rules and marker entries for servers absent from the current project's configuration. Off by default. With user scope, this can remove generated rules for other projects: inspect `--diff --prune` first. Configured but filtered, disabled or unavailable servers are preserved; incomplete configuration loading refuses pruning. |
 | `--check` | Reconnect to every server recorded in the settings file, recompute the annotation hashes, and exit 1 on drift. Requires a file written by `--write`. |
 | `--server <name>` | Only this server. Repeatable. Matches the configured name, `plugin:<plugin>:<server>` for plugin servers, or the server segment of the rule. |
 | `--timeout <ms>` | Per-server limit for connecting and for `tools/list`. Default 20000. |
