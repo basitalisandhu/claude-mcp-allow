@@ -287,12 +287,7 @@ export async function main(argv: string[], io = { out: process.stdout, err: proc
         configuredServers: [
           ...loaded.servers.map((s) => s.ruleServer),
           ...loaded.shadowed.map((s) => s.server.ruleServer),
-          ...loaded.skipped.map((s) => {
-            if (!s.name.startsWith('plugin:')) return s.name;
-            const [, plugin, ...server] = s.name.split(':');
-            const sanitize = (value: string) => value.replace(/[^A-Za-z0-9_-]/g, '_');
-            return `plugin_${sanitize(plugin)}_${sanitize(server.join(':'))}`;
-          }),
+          ...loaded.skipped.map((s) => s.ruleServer),
         ],
       });
     } catch (err) {
