@@ -6,6 +6,8 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+## [0.2.0] - 2026-10-09
+
 ### Added
 
 - Add explicit `--write --prune` and read-only `--diff --prune` for generated rules whose servers are no longer configured. Preserve manual rules and configured servers even when filtered, disabled or unavailable.
@@ -43,6 +45,7 @@ First release. Published to two registries on GitHub Packages, using only the wo
 - `release.yml` (npmjs.com) runs only when the repository variable `NPMJS_PUBLISH` is `true` and passes `--registry https://registry.npmjs.org`.
 - Renamed the umbrella project from Hisar to Masoon; links, names and identifiers updated.
 
-[Unreleased]: https://github.com/basitalisandhu/claude-mcp-allow/compare/v0.1.1...HEAD
+[Unreleased]: https://github.com/basitalisandhu/claude-mcp-allow/compare/v0.2.0...HEAD
+[0.2.0]: https://github.com/basitalisandhu/claude-mcp-allow/compare/v0.1.1...v0.2.0
 [0.1.1]: https://github.com/basitalisandhu/claude-mcp-allow/compare/v0.1.0...v0.1.1
 [0.1.0]: https://github.com/basitalisandhu/claude-mcp-allow/releases/tag/v0.1.0
