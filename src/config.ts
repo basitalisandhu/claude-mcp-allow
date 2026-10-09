@@ -110,6 +110,10 @@ function sanitizeSegment(value: string): string {
   return value.replace(/[^A-Za-z0-9_-]/g, '_');
 }
 
+function pluginRuleServer(pluginName: string, serverName: string): string {
+  return `plugin_${sanitizeSegment(pluginName)}_${sanitizeSegment(serverName)}`;
+}
+
 /** Key used to match plugin servers against higher-precedence servers by endpoint. */
 export function endpointKey(config: RawServerConfig): string | undefined {
   if (typeof config.url === 'string' && config.url) {
@@ -162,7 +166,6 @@ function readPluginCandidates(paths: Paths, settings: SettingsSummary, warnings:
     const manifest = readJsonFile(path.join(root, '.claude-plugin', 'plugin.json'), warnings);
     const flag = settings.enabledPlugins[id];
     const enabled = flag === undefined ? manifest?.defaultEnabled !== false : flag;
-    if (!enabled) continue;
     const plugin: PluginRef = { id, name, marketplace, root };
     const servers: Record<string, RawServerConfig> = {};
     const mcpJson = readJsonFile(path.join(root, '.mcp.json'), warnings);
@@ -186,8 +189,13 @@ function readPluginCandidates(paths: Paths, settings: SettingsSummary, warnings:
     const dataDir = path.join(paths.pluginsDir, 'data', id.replace(/[^A-Za-z0-9_-]/g, '-'));
     for (const [serverName, raw] of Object.entries(servers)) {
       const scoped = `plugin:${name}:${serverName}`;
+      const ruleServer = pluginRuleServer(name, serverName);
+      if (!enabled) {
+        skipped.push({ name: scoped, ruleServer, origin: 'plugin', source: `plugin ${id}`, reason: 'plugin is disabled' });
+        continue;
+      }
       if (settings.disabledMcpServers.has(scoped) || settings.disabledMcpServers.has(serverName)) {
-        skipped.push({ name: scoped, origin: 'plugin', source: `plugin ${id}`, reason: 'listed in disabledMcpServers' });
+        skipped.push({ name: scoped, ruleServer, origin: 'plugin', source: `plugin ${id}`, reason: 'listed in disabledMcpServers' });
         continue;
       }
       candidates.push({
@@ -244,7 +252,7 @@ export function loadServers(opts: LoadOptions): LoadResult {
   const mcpJson = readJsonFile(mcpJsonPath, warnings);
   for (const [name, raw] of Object.entries(asServerMap(mcpJson?.mcpServers))) {
     if (settings.disabledMcpjsonServers.has(name)) {
-      skipped.push({ name, origin: 'project', source: '.mcp.json', reason: 'listed in disabledMcpjsonServers' });
+      skipped.push({ name, ruleServer: name, origin: 'project', source: '.mcp.json', reason: 'listed in disabledMcpjsonServers' });
       continue;
     }
     candidates.push({ name, origin: 'project', source: '.mcp.json', raw, extra: {} });
@@ -262,13 +270,13 @@ export function loadServers(opts: LoadOptions): LoadResult {
   const byEndpoint = new Map<string, ResolvedServer>();
 
   for (const c of candidates) {
+    const ruleServer = c.plugin ? pluginRuleServer(c.plugin.name, c.name) : c.name;
     if (c.origin !== 'plugin' && settings.disabledMcpServers.has(c.name)) {
-      skipped.push({ name: c.name, origin: c.origin, source: c.source, reason: 'listed in disabledMcpServers' });
+      skipped.push({ name: c.name, ruleServer, origin: c.origin, source: c.source, reason: 'listed in disabledMcpServers' });
       continue;
     }
     const { config, missing } = expandServerConfig(c.raw, opts.env, c.extra);
     const serverWarnings = missing.map((v) => `\${${v}} is not set and has no default; left as written`);
-    const ruleServer = c.plugin ? `plugin_${sanitizeSegment(c.plugin.name)}_${sanitizeSegment(c.name)}` : c.name;
     const displayName = c.plugin ? `plugin:${c.plugin.name}:${c.name}` : c.name;
     const server: ResolvedServer = {
       name: c.name,
@@ -282,16 +290,16 @@ export function loadServers(opts: LoadOptions): LoadResult {
     if (c.plugin) server.plugin = c.plugin;
 
     if (c.plugin && referencesUserConfig(config)) {
-      skipped.push({ name: displayName, origin: 'plugin', source: c.source, reason: 'references ${user_config.*}, which this tool does not resolve' });
+      skipped.push({ name: displayName, ruleServer, origin: 'plugin', source: c.source, reason: 'references ${user_config.*}, which this tool does not resolve' });
       continue;
     }
     const type = config.type ?? (config.command ? 'stdio' : config.url ? 'http' : undefined);
     if (type === undefined) {
-      skipped.push({ name: displayName, origin: c.origin, source: c.source, reason: 'entry has neither command nor url' });
+      skipped.push({ name: displayName, ruleServer, origin: c.origin, source: c.source, reason: 'entry has neither command nor url' });
       continue;
     }
     if (type !== 'stdio' && type !== 'http' && type !== 'sse') {
-      skipped.push({ name: displayName, origin: c.origin, source: c.source, reason: `transport type "${type}" is not supported` });
+      skipped.push({ name: displayName, ruleServer, origin: c.origin, source: c.source, reason: `transport type "${type}" is not supported` });
       continue;
     }
 

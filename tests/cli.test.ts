@@ -1,7 +1,7 @@
 import { existsSync, readFileSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import { ROOT, expectGolden, makeFakeEnv, normalizeGeneratedAt, readJson, runCli, type FakeEnv } from './helpers.js';
+import { ROOT, expectGolden, makeFakeEnv, normalizeGeneratedAt, readJson, runCli, writeJson, type FakeEnv } from './helpers.js';
 
 const RULE = /^mcp__[^*]+__[^*]+$/;
 
@@ -12,6 +12,96 @@ describe('claude-mcp-allow CLI', () => {
   });
   afterAll(() => env.cleanup());
 
+  it.each(['setting', 'manifest'])('preserves disabled plugin rules and markers during pruning (%s)', async (disabledBy) => {
+    const isolated = makeFakeEnv();
+    try {
+      const initial = await runCli(['--write', '--server', 'plugin_db-tools_database'], isolated);
+      expect(initial.code).toBe(0);
+      const file = path.join(isolated.project, '.claude', 'settings.local.json');
+      const before = readJson(file);
+      const marker = before.claudeMcpAllow.servers['plugin_db-tools_database'];
+      const pluginRules = {
+        allow: before.permissions.allow.filter((r: string) => r.startsWith('mcp__plugin_db-tools_database__')),
+        ask: before.permissions.ask.filter((r: string) => r.startsWith('mcp__plugin_db-tools_database__')),
+      };
+      expect(pluginRules.allow.length).toBeGreaterThan(0);
+      expect(pluginRules.ask.length).toBeGreaterThan(0);
+      before.permissions.allow.push('mcp__removed__read', 'mcp__removed__manual');
+      before.claudeMcpAllow.servers.removed = { read: 'allow:old' };
+      writeJson(file, before);
+      writeJson(path.join(isolated.home, '.claude', 'settings.json'), {
+        enabledPlugins: { 'off-plugin@demo-market': false, ...(disabledBy === 'setting' ? { 'db-tools@demo-market': false } : {}) },
+      });
+      writeJson(path.join(isolated.pluginRoot, '.claude-plugin', 'plugin.json'), {
+        name: 'db-tools', defaultEnabled: disabledBy !== 'manifest',
+      });
+
+      const bytes = readFileSync(file);
+      const diff = await runCli(['--diff', '--prune', '--server', 'annotated'], isolated);
+      expect(diff.code).toBe(0);
+      expect(diff.stdout).toContain('- allow mcp__removed__read');
+      expect(readFileSync(file)).toEqual(bytes);
+
+      const result = await runCli(['--write', '--prune', '--server', 'annotated'], isolated);
+      expect(result.code).toBe(0);
+      const after = readJson(file);
+      expect(after.claudeMcpAllow.servers['plugin_db-tools_database']).toEqual(marker);
+      expect(diff.stdout).not.toMatch(/^- (allow|ask)\s+mcp__plugin_db-tools_database__/m);
+      for (const list of ['allow', 'ask'] as const) {
+        expect(after.permissions[list].filter((r: string) => r.startsWith('mcp__plugin_db-tools_database__'))).toEqual(pluginRules[list]);
+      }
+      expect(after.claudeMcpAllow.servers.removed).toBeUndefined();
+      expect(after.permissions.allow).not.toContain('mcp__removed__read');
+      expect(after.permissions.allow).toContain('mcp__removed__manual');
+    } finally {
+      isolated.cleanup();
+    }
+  });
+  it('refuses pruning with incomplete configuration and preserves the settings bytes', async () => {
+    const isolated = makeFakeEnv();
+    try {
+      const file = path.join(isolated.project, '.mcp.json');
+      writeFileSync(file, '{invalid');
+      const settings = path.join(isolated.project, '.claude', 'settings.local.json');
+      const before = readFileSync(settings);
+      const result = await runCli(['--write', '--prune'], isolated);
+      expect(result.code).toBe(2);
+      expect(result.stderr).toContain('refusing --prune');
+      expect(readFileSync(settings)).toEqual(before);
+    } finally {
+      isolated.cleanup();
+    }
+  });
+  it('shows pruning in a read-only diff and requires opt-in for user-scope removal', async () => {
+    const settings = {
+      permissions: { allow: ['mcp__other_project__read', 'mcp__other_project__manual'], ask: ['mcp__other_project__write'] },
+      claudeMcpAllow: {
+        generatedBy: 'claude-mcp-allow 0.1.0', generatedAt: '', heuristic: false,
+        servers: { other_project: { read: 'allow:old', write: 'ask:old' } },
+      },
+    };
+    const isolated = makeFakeEnv({ userSettings: settings });
+    try {
+      const file = path.join(isolated.home, '.claude', 'settings.json');
+      const plain = await runCli(['--server', 'annotated', '--scope', 'user', '--write'], isolated);
+      expect(plain.code).toBe(0);
+      expect(readJson(file).claudeMcpAllow.servers.other_project).toBeDefined();
+      const bytes = readFileSync(file);
+      const diff = await runCli(['--server', 'annotated', '--scope', 'user', '--diff', '--prune'], isolated);
+      expect(diff.code).toBe(0);
+      expect(diff.stdout).toContain('- allow mcp__other_project__read');
+      expect(diff.stdout).toContain('- ask   mcp__other_project__write');
+      expect(readFileSync(file)).toEqual(bytes);
+      const pruned = await runCli(['--server', 'annotated', '--scope', 'user', '--write', '--prune'], isolated);
+      expect(pruned.code).toBe(0);
+      expect(pruned.stderr).toContain('pruned other_project: 2 rules');
+      const result = readJson(file);
+      expect(result.claudeMcpAllow.servers.other_project).toBeUndefined();
+      expect(result.permissions.allow).toContain('mcp__other_project__manual');
+    } finally {
+      isolated.cleanup();
+    }
+  });
   it('prints help and version, and rejects unknown flags with exit 2', async () => {
     expect((await runCli(['--help'], env)).stdout).toContain('Usage: claude-mcp-allow');
     expect((await runCli(['--version'], env)).stdout.trim()).toBe(readJson(path.join(ROOT, 'package.json')).version);
@@ -19,6 +109,8 @@ describe('claude-mcp-allow CLI', () => {
     expect(bad.code).toBe(2);
     expect(bad.stderr).toContain('unknown argument');
     expect((await runCli(['--scope', 'global'], env)).code).toBe(2);
+    expect((await runCli(['--prune'], env)).code).toBe(2);
+    expect((await runCli(['--prune', '--check'], env)).code).toBe(2);
   });
 
   it('proposes allow and ask rules from live annotations (golden) and explains each decision', async () => {

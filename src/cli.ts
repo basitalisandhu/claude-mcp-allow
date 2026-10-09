@@ -30,6 +30,7 @@ Options:
   --heuristic        Allow unannotated tools whose name starts with a read verb
   --write            Merge the rules into the settings file for --scope
   --diff             Print rules that --write would add and remove
+  --prune            With --write/--diff, remove marked rules for absent servers
   --check            Reconnect and exit 1 when annotations drifted from the saved rules
   --server <name>    Only this server (repeatable)
   --timeout <ms>     Connect and tools/list timeout per server (default: 20000)
@@ -45,6 +46,7 @@ export interface CliOptions {
   heuristic: boolean;
   write: boolean;
   diff: boolean;
+  prune: boolean;
   check: boolean;
   servers: string[];
   timeoutMs: number;
@@ -61,6 +63,7 @@ export function parseArgs(argv: string[]): CliOptions {
     heuristic: false,
     write: false,
     diff: false,
+    prune: false,
     check: false,
     servers: [],
     timeoutMs: 20000,
@@ -104,6 +107,9 @@ export function parseArgs(argv: string[]): CliOptions {
       case '--diff':
         opts.diff = true;
         break;
+      case '--prune':
+        opts.prune = true;
+        break;
       case '--check':
         opts.check = true;
         break;
@@ -127,6 +133,9 @@ export function parseArgs(argv: string[]): CliOptions {
       default:
         throw new UsageError(`unknown argument "${arg}"`);
     }
+  }
+  if (opts.prune && (opts.check || (!opts.write && !opts.diff))) {
+    throw new UsageError('--prune requires --write or --diff and cannot be used with --check');
   }
   return opts;
 }
@@ -203,6 +212,10 @@ export async function main(argv: string[], io = { out: process.stdout, err: proc
   const paths = resolvePaths({ cwd: opts.cwd, home, env });
   const loaded = loadServers({ cwd: opts.cwd, home, env });
   for (const warning of loaded.warnings) log(`warning: ${warning}`);
+  if (opts.prune && loaded.warnings.length > 0) {
+    log('claude-mcp-allow: refusing --prune because configuration could not be loaded completely');
+    return 2;
+  }
   for (const { server, by } of loaded.shadowed) {
     log(`note: ${server.displayName} from ${server.source} is shadowed by the ${by.origin} definition (${by.source})`);
   }
@@ -269,7 +282,14 @@ export async function main(argv: string[], io = { out: process.stdout, err: proc
     }
     let merged;
     try {
-      merged = mergeIntoSettings(settings, { plan, now: new Date().toISOString(), version: VERSION });
+      merged = mergeIntoSettings(settings, {
+        plan, now: new Date().toISOString(), version: VERSION, prune: opts.prune,
+        configuredServers: [
+          ...loaded.servers.map((s) => s.ruleServer),
+          ...loaded.shadowed.map((s) => s.server.ruleServer),
+          ...loaded.skipped.map((s) => s.ruleServer),
+        ],
+      });
     } catch (err) {
       if (err instanceof SettingsError) {
         log(`claude-mcp-allow: ${err.message}`);
@@ -290,6 +310,7 @@ export async function main(argv: string[], io = { out: process.stdout, err: proc
       for (const line of lines) print(line);
     }
     if (opts.write) {
+      for (const item of merged.pruned) log(`pruned ${item.server}: ${item.rules} rules`);
       if (merged.changed || !settings.exists) {
         writeSettingsFile(settings, merged.text);
         log(

@@ -14,6 +14,53 @@ const load = (extraEnv: Record<string, string> = {}, cwd?: string) =>
   loadServers({ cwd: cwd ?? env.project, home: env.home, env: { FIXTURE_DIR: path.dirname(ANNOTATED), ...extraEnv }, platform: 'linux' });
 
 describe('server discovery', () => {
+  it.each(['disabled', 'user-config', 'unsupported', 'empty'])('keeps the loader rule identifier for skipped plugin servers (%s)', (reason) => {
+    const other = makeFakeEnv();
+    try {
+      writeJson(path.join(other.home, '.claude', 'plugins', 'installed_plugins.json'), {
+        plugins: { 'db.tools@demo-market': { installPath: other.pluginRoot } },
+      });
+      writeJson(path.join(other.pluginRoot, '.mcp.json'), {
+        mcpServers: {
+          'data:base.v1': reason === 'empty' ? {}
+            : reason === 'user-config' ? { command: '${user_config.command}' }
+              : { type: reason === 'unsupported' ? 'ws' : 'stdio', command: 'node' },
+        },
+      });
+      if (reason === 'disabled') {
+        writeJson(path.join(other.home, '.claude', 'settings.json'), {
+          disabledMcpServers: ['plugin:db.tools:data:base.v1'],
+        });
+      }
+      const result = loadServers({ cwd: other.project, home: other.home, env: {}, platform: 'linux' });
+      expect(result.servers.some((s) => s.plugin?.name === 'db.tools')).toBe(false);
+      expect(result.skipped.find((s) => s.name === 'plugin:db.tools:data:base.v1')).toHaveProperty('ruleServer', 'plugin_db_tools_data_base_v1');
+    } finally {
+      other.cleanup();
+    }
+  });
+
+  it.each(['setting', 'manifest'])('records disabled plugin servers without loading them (%s)', (disabledBy) => {
+    const other = makeFakeEnv();
+    try {
+      writeJson(path.join(other.home, '.claude', 'settings.json'), {
+        enabledPlugins: { 'off-plugin@demo-market': false, ...(disabledBy === 'setting' ? { 'db-tools@demo-market': false } : {}) },
+      });
+      writeJson(path.join(other.pluginRoot, '.claude-plugin', 'plugin.json'), {
+        name: 'db-tools', defaultEnabled: disabledBy !== 'manifest',
+        mcpServers: { 'extra.server': { command: 'node', args: ['never-run.mjs'] } },
+      });
+      const result = loadServers({ cwd: other.project, home: other.home, env: {}, platform: 'linux' });
+      expect(result.servers.some((s) => s.plugin?.name === 'db-tools')).toBe(false);
+      expect(result.skipped.filter((s) => s.name.startsWith('plugin:db-tools:'))).toEqual([
+        expect.objectContaining({ name: 'plugin:db-tools:database', ruleServer: 'plugin_db-tools_database', reason: 'plugin is disabled' }),
+        expect.objectContaining({ name: 'plugin:db-tools:extra.server', ruleServer: 'plugin_db-tools_extra_server', reason: 'plugin is disabled' }),
+      ]);
+    } finally {
+      other.cleanup();
+    }
+  });
+
   it('reads project, user, local and plugin definitions and records their source', () => {
     const result = load();
     const byName = Object.fromEntries(result.servers.map((s) => [s.displayName, s]));
@@ -64,6 +111,7 @@ describe('server discovery', () => {
     expect(result.servers.some((s) => s.name === 'hidden')).toBe(false);
     expect(result.servers.some((s) => s.name === 'disabled-one')).toBe(false);
     expect(result.skipped.find((s) => s.name === 'disabled-one')?.reason).toContain('disabledMcpjsonServers');
+    expect(result.skipped.find((s) => s.name === 'disabled-one')).toHaveProperty('ruleServer', 'disabled-one');
 
     const other = makeFakeEnv();
     try {
@@ -78,6 +126,8 @@ describe('server discovery', () => {
       expect(r.servers.map((s) => s.name)).not.toContain('sock');
       expect(r.skipped.find((s) => s.name === 'sock')?.reason).toContain('ws');
       expect(r.skipped.find((s) => s.name === 'empty')?.reason).toContain('neither command nor url');
+      expect(r.skipped.find((s) => s.name === 'sock')).toHaveProperty('ruleServer', 'sock');
+      expect(r.skipped.find((s) => s.name === 'empty')).toHaveProperty('ruleServer', 'empty');
       expect(r.servers.map((s) => s.name)).toContain('fine');
     } finally {
       other.cleanup();
@@ -116,6 +166,8 @@ describe('server discovery', () => {
       const r2 = loadServers({ cwd: other.project, home: other.home, env: {}, platform: 'linux' });
       expect(r2.servers.map((s) => s.displayName)).not.toContain('unannotated');
       expect(r2.servers.map((s) => s.displayName)).not.toContain('plugin:db-tools:inline');
+      expect(r2.skipped.find((s) => s.name === 'unannotated')).toHaveProperty('ruleServer', 'unannotated');
+      expect(r2.skipped.find((s) => s.name === 'plugin:db-tools:inline')).toHaveProperty('ruleServer', 'plugin_db-tools_inline');
 
       const configDir = path.join(other.root, 'alt-config');
       mkdirSync(configDir, { recursive: true });

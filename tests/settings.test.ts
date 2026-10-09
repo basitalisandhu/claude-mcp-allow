@@ -54,6 +54,36 @@ describe('settings file locations', () => {
 });
 
 describe('merging rules into settings', () => {
+  it('prunes only recorded rules for servers no longer configured when explicitly requested', () => {
+    const file = path.join(tempDir(), 'settings.json');
+    const initial = mergeIntoSettings(readSettingsFile(file), {
+      plan: fakePlan({ old: { read: 'allow', write: 'ask' }, active: { read: 'allow' } }),
+      now: NOW, version: '0.1.0',
+    });
+    const data = initial.data;
+    (data.permissions as { allow: string[] }).allow.push('mcp__old__manual');
+    writeJson(file, data);
+    const next = { plan: fakePlan({ active: { read: 'allow' } }), now: NOW, version: '0.1.0' };
+    expect(readMarker(mergeIntoSettings(readSettingsFile(file), next).data)!.servers.old).toBeDefined();
+    const pruned = mergeIntoSettings(readSettingsFile(file), { ...next, prune: true });
+    expect(readMarker(pruned.data)!.servers.old).toBeUndefined();
+    expect(pruned.removed).toEqual({ allow: ['mcp__old__read'], ask: ['mcp__old__write'] });
+    expect((pruned.data.permissions as { allow: string[] }).allow).toContain('mcp__old__manual');
+    expect(pruned.pruned).toEqual([{ server: 'old', rules: 2 }]);
+  });
+
+  it('preserves a configured server that was not listed successfully', () => {
+    const file = path.join(tempDir(), 'settings.json');
+    const initial = mergeIntoSettings(readSettingsFile(file), {
+      plan: fakePlan({ failed: { read: 'allow' } }), now: NOW, version: '0.1.0',
+    });
+    writeFileSync(file, initial.text);
+    const next = mergeIntoSettings(readSettingsFile(file), {
+      plan: fakePlan({}), configuredServers: ['failed'], prune: true, now: NOW, version: '0.1.0',
+    });
+    expect(readMarker(next.data)!.servers.failed).toBeDefined();
+    expect(next.removed.allow).toEqual([]);
+  });
   const existing = {
     $schema: 'https://json.schemastore.org/claude-code-settings.json',
     permissions: { deny: ['Read(./.env)', 'mcp__s1__denied'], allow: ['Bash(npm test)', 'mcp__s1__by_hand'] },

@@ -45,6 +45,8 @@ export interface ResolvedServer {
 
 export interface SkippedServer {
   name: string;
+  /** Exact server segment of permission rules, as resolved by the loader. */
+  ruleServer: string;
   origin: ServerOrigin;
   source: string;
   reason: string;
