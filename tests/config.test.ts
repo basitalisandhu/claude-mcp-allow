@@ -1,7 +1,7 @@
-import { mkdirSync, readFileSync } from 'node:fs';
+import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import { endpointKey, loadServers } from '../src/config.js';
+import { endpointKey, loadServers, resolvePaths } from '../src/config.js';
 import { ANNOTATED, UNANNOTATED, makeFakeEnv, writeJson, type FakeEnv } from './helpers.js';
 
 let env: FakeEnv;
@@ -14,6 +14,13 @@ const load = (extraEnv: Record<string, string> = {}, cwd?: string) =>
   loadServers({ cwd: cwd ?? env.project, home: env.home, env: { FIXTURE_DIR: path.dirname(ANNOTATED), ...extraEnv }, platform: 'linux' });
 
 describe('server discovery', () => {
+  it('maps managed policy files to the documented platform paths', () => {
+    const base = { cwd: env.project, home: env.home, env: {} };
+    expect(resolvePaths({ ...base, platform: 'linux' }).managedMcp).toBe('/etc/claude-code/managed-mcp.json');
+    expect(resolvePaths({ ...base, platform: 'darwin' }).managedSettings).toBe('/Library/Application Support/ClaudeCode/managed-settings.json');
+    expect(resolvePaths({ ...base, platform: 'win32' }).managedMcp).toBe('C:\\Program Files\\ClaudeCode\\managed-mcp.json');
+  });
+
   it.each(['disabled', 'user-config', 'unsupported', 'empty'])('keeps the loader rule identifier for skipped plugin servers (%s)', (reason) => {
     const other = makeFakeEnv();
     try {
@@ -91,6 +98,121 @@ describe('server discovery', () => {
       writeJson(claudeJson, data);
       const r = loadServers({ cwd: other.project, home: other.home, env: {}, platform: 'linux' });
       expect(r.servers.find((s) => s.name === 'shared')?.origin).toBe('local');
+    } finally {
+      other.cleanup();
+    }
+  });
+
+  it('gives a valid managed-mcp.json exclusive control while loading managed settings alongside it', () => {
+    const other = makeFakeEnv();
+    try {
+      const managedDir = path.join(other.home, 'managed');
+      writeJson(path.join(managedDir, 'managed-mcp.json'), {
+        mcpServers: {
+          unannotated: { command: 'node', args: ['managed.mjs'] },
+          'managed-file': { type: 'http', url: 'https://managed.example/mcp' },
+        },
+      });
+      writeJson(path.join(managedDir, 'managed-settings.json'), {
+        managedMcpServers: {
+          'managed-setting': { type: 'streamable-http', url: 'https://settings.example/mcp' },
+          'disabled-managed': { type: 'http', url: 'https://settings.example/disabled' },
+        },
+      });
+      writeJson(path.join(other.home, '.claude', 'settings.json'), {
+        disabledMcpServers: ['disabled-managed'],
+      });
+
+      const result = loadServers({
+        cwd: other.project,
+        home: other.home,
+        env: {},
+        platform: 'linux',
+        managedConfigDir: managedDir,
+      });
+
+      expect(result.servers.find((server) => server.name === 'unannotated')).toMatchObject({
+        origin: 'managed',
+        source: path.join(managedDir, 'managed-mcp.json'),
+      });
+      expect(result.servers.find((server) => server.name === 'managed-file')?.origin).toBe('managed');
+      expect(result.servers.find((server) => server.name === 'managed-setting')).toMatchObject({
+        origin: 'managed',
+        source: path.join(managedDir, 'managed-settings.json'),
+        config: { type: 'http', url: 'https://settings.example/mcp' },
+      });
+      expect(result.servers.map((server) => server.name)).not.toContain('disabled-managed');
+      expect(result.skipped.find((server) => server.name === 'disabled-managed')).toMatchObject({
+        origin: 'managed',
+        reason: 'listed in disabledMcpServers',
+      });
+      expect(result.skipped.find((server) => server.name === 'annotated')?.reason).toBe('managed-mcp.json has exclusive control');
+      expect(result.skipped.find((server) => server.name === 'unannotated')?.reason).toBe('managed-mcp.json has exclusive control');
+    } finally {
+      other.cleanup();
+    }
+  });
+
+  it('falls back to normal discovery when managed-mcp.json cannot be parsed', () => {
+    const other = makeFakeEnv();
+    try {
+      const managedDir = path.join(other.home, 'managed');
+      mkdirSync(managedDir, { recursive: true });
+      const managedFile = path.join(managedDir, 'managed-mcp.json');
+      writeFileSync(managedFile, '{broken');
+      const result = loadServers({ cwd: other.project, home: other.home, env: {}, platform: 'linux', managedConfigDir: managedDir });
+      expect(result.servers.map((server) => server.name)).toContain('annotated');
+      expect(result.warnings.some((warning) => warning.startsWith(`${managedFile}: invalid JSON`))).toBe(true);
+    } finally {
+      other.cleanup();
+    }
+  });
+
+  it('validates managedMcpServers as literal HTTPS remote definitions', () => {
+    const other = makeFakeEnv();
+    try {
+      const managedDir = path.join(other.home, 'managed');
+      writeJson(path.join(managedDir, 'managed-settings.json'), {
+        managedMcpServers: {
+          templated: { type: 'http', url: 'https://managed.example/${TENANT}' },
+          'valid-sse': { type: 'sse', url: 'https://managed.example/events', headers: { Authorization: 'Bearer literal' } },
+          aliased: { type: 'streamable-http', url: 'https://managed.example/mcp' },
+          'bad name': { type: 'http', url: 'https://managed.example/name' },
+          command: { type: 'http', url: 'https://managed.example/command', command: 'node' },
+          insecure: { type: 'http', url: 'http://managed.example/mcp' },
+          malformed: 'https://managed.example/mcp',
+        },
+      });
+      const result = loadServers({ cwd: other.project, home: other.home, env: { TENANT: 'expanded' }, platform: 'linux', managedConfigDir: managedDir });
+      expect(result.servers.find((server) => server.name === 'valid-sse')?.config.headers).toEqual({ Authorization: 'Bearer literal' });
+      expect(result.servers.find((server) => server.name === 'aliased')?.config.type).toBe('http');
+      expect(result.servers.map((server) => server.name)).not.toContain('templated');
+      expect(result.skipped.find((server) => server.name === 'templated')?.reason).toContain('literal values');
+      expect(result.skipped.find((server) => server.name === 'bad name')?.reason).toContain('names may contain');
+      expect(result.skipped.find((server) => server.name === 'command')?.reason).toContain('may not define command');
+      expect(result.skipped.find((server) => server.name === 'insecure')?.reason).toContain('HTTPS URL');
+      expect(result.skipped.find((server) => server.name === 'malformed')?.reason).toContain('JSON objects');
+    } finally {
+      other.cleanup();
+    }
+  });
+
+  it('prefers managed-mcp.json when both managed sources define the same name', () => {
+    const other = makeFakeEnv();
+    try {
+      const managedDir = path.join(other.home, 'managed');
+      writeJson(path.join(managedDir, 'managed-mcp.json'), {
+        mcpServers: { shared: { command: 'node', args: ['managed-file.mjs'] } },
+      });
+      writeJson(path.join(managedDir, 'managed-settings.json'), {
+        managedMcpServers: { shared: { type: 'http', url: 'https://managed.example/mcp' } },
+      });
+      const result = loadServers({ cwd: other.project, home: other.home, env: {}, platform: 'linux', managedConfigDir: managedDir });
+      expect(result.servers.find((server) => server.name === 'shared')?.source).toBe(path.join(managedDir, 'managed-mcp.json'));
+      expect(result.shadowed.find((entry) => entry.server.name === 'shared')).toMatchObject({
+        server: { source: path.join(managedDir, 'managed-settings.json') },
+        by: { source: path.join(managedDir, 'managed-mcp.json') },
+      });
     } finally {
       other.cleanup();
     }

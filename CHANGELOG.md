@@ -6,6 +6,10 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+### Added
+
+- Load organisation-provided MCP servers from the platform `managed-mcp.json` and `managedMcpServers` setting with managed precedence and origin reporting.
+
 ## [0.2.0] - 2026-10-09
 
 ### Added

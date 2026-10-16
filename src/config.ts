@@ -16,6 +16,9 @@ export interface Paths {
   userSettings: string;
   projectSettings: string;
   localSettings: string;
+  /** Platform-wide Claude Code policy files. */
+  managedMcp: string;
+  managedSettings: string;
 }
 
 export interface LoadOptions {
@@ -23,6 +26,19 @@ export interface LoadOptions {
   home: string;
   env: Environment;
   platform?: NodeJS.Platform;
+  /** Test/deployment override for the platform-wide ClaudeCode directory. */
+  managedConfigDir?: string;
+}
+
+function managedConfigDir(platform: NodeJS.Platform): string {
+  switch (platform) {
+    case 'win32':
+      return path.win32.join('C:\\Program Files', 'ClaudeCode');
+    case 'darwin':
+      return path.posix.join('/Library/Application Support', 'ClaudeCode');
+    default:
+      return path.posix.join('/etc', 'claude-code');
+  }
 }
 
 export function resolvePaths(opts: LoadOptions): Paths {
@@ -37,7 +53,10 @@ export function resolvePaths(opts: LoadOptions): Paths {
     const candidate = path.join(configDir, '.claude.json');
     if (existsSync(candidate)) claudeJson = candidate;
   }
-  const ctx = { cwd, home, configDir, platform: opts.platform ?? process.platform };
+  const platform = opts.platform ?? process.platform;
+  const ctx = { cwd, home, configDir, platform };
+  const managedDir = opts.managedConfigDir ? path.resolve(opts.managedConfigDir) : managedConfigDir(platform);
+  const joinManaged = opts.managedConfigDir ? path.join : platform === 'win32' ? path.win32.join : path.posix.join;
   return {
     cwd,
     home,
@@ -47,6 +66,8 @@ export function resolvePaths(opts: LoadOptions): Paths {
     userSettings: settingsPathFor('user', ctx),
     projectSettings: settingsPathFor('project', ctx),
     localSettings: settingsPathFor('local', ctx),
+    managedMcp: joinManaged(managedDir, 'managed-mcp.json'),
+    managedSettings: joinManaged(managedDir, 'managed-settings.json'),
   };
 }
 
@@ -141,11 +162,54 @@ interface Candidate {
   origin: ServerOrigin;
   source: string;
   raw: RawServerConfig;
+  /** `managedMcpServers` entries are already validated and stay literal. */
+  literal?: boolean;
   plugin?: PluginRef;
   extra: Record<string, string>;
 }
 
-function readPluginCandidates(paths: Paths, settings: SettingsSummary, warnings: string[], skipped: SkippedServer[]): Candidate[] {
+function containsInterpolation(value: unknown): boolean {
+  if (typeof value === 'string') return /\$\{[^}]+\}/.test(value);
+  if (Array.isArray(value)) return value.some(containsInterpolation);
+  if (value && typeof value === 'object') {
+    return Object.entries(value as Record<string, unknown>).some(([key, entry]) => containsInterpolation(key) || containsInterpolation(entry));
+  }
+  return false;
+}
+
+function managedSettingsConfig(name: string, value: unknown): { config?: RawServerConfig; reason?: string } {
+  if (!/^[A-Za-z0-9_-]+$/.test(name)) {
+    return { reason: 'managedMcpServers names may contain only letters, numbers, hyphens and underscores' };
+  }
+  if (!value || typeof value !== 'object' || Array.isArray(value)) {
+    return { reason: 'managedMcpServers entries must be JSON objects' };
+  }
+  const raw = value as RawServerConfig;
+  for (const key of ['command', 'args', 'env', 'headersHelper']) {
+    if (key in raw) return { reason: `managedMcpServers entries may not define ${key}` };
+  }
+  if (containsInterpolation(raw)) {
+    return { reason: 'managedMcpServers entries must use literal values without ${VAR} references' };
+  }
+  if (raw.type !== 'http' && raw.type !== 'sse' && raw.type !== 'streamable-http') {
+    return { reason: 'managedMcpServers entries must use type "http", "sse" or "streamable-http"' };
+  }
+  if (typeof raw.url !== 'string') return { reason: 'managedMcpServers entries must define an HTTPS URL' };
+  try {
+    if (new URL(raw.url).protocol !== 'https:') return { reason: 'managedMcpServers entries must define an HTTPS URL' };
+  } catch {
+    return { reason: 'managedMcpServers entries must define a valid HTTPS URL' };
+  }
+  return { config: { ...raw, type: raw.type === 'streamable-http' ? 'http' : raw.type } };
+}
+
+function readPluginCandidates(
+  paths: Paths,
+  settings: SettingsSummary,
+  warnings: string[],
+  skipped: SkippedServer[],
+  managedMcpExclusive = false,
+): Candidate[] {
   const record = readJsonFile(path.join(paths.pluginsDir, 'installed_plugins.json'), warnings);
   const plugins = record?.plugins;
   if (!plugins || typeof plugins !== 'object' || Array.isArray(plugins)) return [];
@@ -190,6 +254,17 @@ function readPluginCandidates(paths: Paths, settings: SettingsSummary, warnings:
     for (const [serverName, raw] of Object.entries(servers)) {
       const scoped = `plugin:${name}:${serverName}`;
       const ruleServer = pluginRuleServer(name, serverName);
+      if (managedMcpExclusive) {
+        candidates.push({
+          name: serverName,
+          origin: 'plugin',
+          source: `plugin ${id} (${displayHome(root, paths.home)})`,
+          raw,
+          plugin,
+          extra: { CLAUDE_PLUGIN_ROOT: root, CLAUDE_PLUGIN_DATA: dataDir, CLAUDE_PROJECT_DIR: paths.cwd },
+        });
+        continue;
+      }
       if (!enabled) {
         skipped.push({ name: scoped, ruleServer, origin: 'plugin', source: `plugin ${id}`, reason: 'plugin is disabled' });
         continue;
@@ -224,8 +299,8 @@ function projectKeys(cwd: string): string[] {
 
 /**
  * Load every MCP server definition Claude Code would read for `cwd`, apply the
- * documented precedence (local, project, user, plugin; managed servers are not
- * read) and record where each one came from.
+ * documented precedence (managed, local, project, user, plugin) and record
+ * where each one came from.
  */
 export function loadServers(opts: LoadOptions): LoadResult {
   const paths = resolvePaths(opts);
@@ -234,6 +309,30 @@ export function loadServers(opts: LoadOptions): LoadResult {
   const settings = readSettingsSummary(paths, warnings);
   const claudeJson = readJsonFile(paths.claudeJson, warnings) ?? {};
   const candidates: Candidate[] = [];
+
+  // A mocked platform is useful for path tests, but its system root does not
+  // belong to the host running this process. Only read it when the platform is
+  // real, or when the caller supplied an explicit managed directory.
+  const readManaged = opts.managedConfigDir !== undefined || opts.platform === undefined || opts.platform === process.platform;
+  const managedMcp = readManaged ? readJsonFile(paths.managedMcp, warnings) : undefined;
+  const managedMcpExclusive = managedMcp !== undefined;
+  for (const [name, raw] of Object.entries(asServerMap(managedMcp?.mcpServers))) {
+    candidates.push({ name, origin: 'managed', source: paths.managedMcp, raw, extra: {} });
+  }
+
+  const managedSettings = readManaged ? readJsonFile(paths.managedSettings, warnings) : undefined;
+  const managedSettingsServers = managedSettings?.managedMcpServers;
+  const managedSettingsEntries = managedSettingsServers && typeof managedSettingsServers === 'object' && !Array.isArray(managedSettingsServers)
+    ? Object.entries(managedSettingsServers as Record<string, unknown>)
+    : [];
+  for (const [name, value] of managedSettingsEntries) {
+    const { config, reason } = managedSettingsConfig(name, value);
+    if (!config) {
+      skipped.push({ name, ruleServer: name, origin: 'managed', source: paths.managedSettings, reason: reason! });
+      continue;
+    }
+    candidates.push({ name, origin: 'managed', source: paths.managedSettings, raw: config, literal: true, extra: {} });
+  }
 
   const projects = claudeJson.projects;
   if (projects && typeof projects === 'object') {
@@ -251,7 +350,7 @@ export function loadServers(opts: LoadOptions): LoadResult {
   const mcpJsonPath = path.join(paths.cwd, '.mcp.json');
   const mcpJson = readJsonFile(mcpJsonPath, warnings);
   for (const [name, raw] of Object.entries(asServerMap(mcpJson?.mcpServers))) {
-    if (settings.disabledMcpjsonServers.has(name)) {
+    if (!managedMcpExclusive && settings.disabledMcpjsonServers.has(name)) {
       skipped.push({ name, ruleServer: name, origin: 'project', source: '.mcp.json', reason: 'listed in disabledMcpjsonServers' });
       continue;
     }
@@ -262,7 +361,7 @@ export function loadServers(opts: LoadOptions): LoadResult {
     candidates.push({ name, origin: 'user', source: displayHome(paths.claudeJson, paths.home), raw, extra: {} });
   }
 
-  candidates.push(...readPluginCandidates(paths, settings, warnings, skipped));
+  candidates.push(...readPluginCandidates(paths, settings, warnings, skipped, managedMcpExclusive));
 
   const servers: ResolvedServer[] = [];
   const shadowed: LoadResult['shadowed'] = [];
@@ -271,13 +370,17 @@ export function loadServers(opts: LoadOptions): LoadResult {
 
   for (const c of candidates) {
     const ruleServer = c.plugin ? pluginRuleServer(c.plugin.name, c.name) : c.name;
+    const displayName = c.plugin ? `plugin:${c.plugin.name}:${c.name}` : c.name;
+    if (managedMcpExclusive && c.origin !== 'managed') {
+      skipped.push({ name: displayName, ruleServer, origin: c.origin, source: c.source, reason: 'managed-mcp.json has exclusive control' });
+      continue;
+    }
     if (c.origin !== 'plugin' && settings.disabledMcpServers.has(c.name)) {
       skipped.push({ name: c.name, ruleServer, origin: c.origin, source: c.source, reason: 'listed in disabledMcpServers' });
       continue;
     }
-    const { config, missing } = expandServerConfig(c.raw, opts.env, c.extra);
+    const { config, missing } = c.literal ? { config: c.raw, missing: [] } : expandServerConfig(c.raw, opts.env, c.extra);
     const serverWarnings = missing.map((v) => `\${${v}} is not set and has no default; left as written`);
-    const displayName = c.plugin ? `plugin:${c.plugin.name}:${c.name}` : c.name;
     const server: ResolvedServer = {
       name: c.name,
       ruleServer,

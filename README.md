@@ -96,12 +96,13 @@ The tool reads the same places Claude Code does, in the documented precedence, a
 
 | Precedence | Source | File |
 |---|---|---|
+| 0 | organisation-managed | `managed-mcp.json` and `managedMcpServers` in `managed-settings.json` at the [platform policy path](https://code.claude.com/docs/en/managed-mcp) |
 | 1 | local scope | `~/.claude.json`, `projects["<cwd>"].mcpServers` |
 | 2 | project scope | `<cwd>/.mcp.json` |
 | 3 | user scope | `~/.claude.json`, top-level `mcpServers` |
 | 4 | enabled plugins | `.mcp.json` at each plugin root and `mcpServers` in its `.claude-plugin/plugin.json`, found through `~/.claude/plugins/installed_plugins.json` and `enabledPlugins` in your settings files |
 
-Servers your organisation provides through managed settings and connectors fetched from claude.ai are not read. `CLAUDE_CONFIG_DIR` moves `~/.claude` (settings and plugins; `.claude.json` is read from there when it exists) and `CLAUDE_CODE_PLUGIN_CACHE_DIR` moves the plugins root. Servers listed in `disabledMcpjsonServers` or `disabledMcpServers` are skipped. `${VAR}` and `${VAR:-default}` are expanded in `command`, `args`, `env`, `url` and `headers`; an unset variable without a default is left as written with a warning, and the credential variables Claude Code reads as empty in a remote server's `url` and `headers` (such as `ANTHROPIC_API_KEY` and `NPM_TOKEN`) are read as empty here too. `${CLAUDE_PLUGIN_ROOT}`, `${CLAUDE_PLUGIN_DATA}` and `${CLAUDE_PROJECT_DIR}` are expanded for plugin servers.
+Organisation-managed servers use `origin: "managed"` and take precedence by name. A valid `managed-mcp.json` has exclusive control, while `managedMcpServers` accepts only literal, HTTPS remote definitions; users may still disable either kind with `disabledMcpServers`. Connectors fetched from claude.ai are not read. `CLAUDE_CONFIG_DIR` moves `~/.claude` (settings and plugins; `.claude.json` is read from there when it exists) and `CLAUDE_CODE_PLUGIN_CACHE_DIR` moves the plugins root. Servers listed in `disabledMcpjsonServers` or `disabledMcpServers` are skipped. `${VAR}` and `${VAR:-default}` are expanded in `command`, `args`, `env`, `url` and `headers`; an unset variable without a default is left as written with a warning, and the credential variables Claude Code reads as empty in a remote server's `url` and `headers` (such as `ANTHROPIC_API_KEY` and `NPM_TOKEN`) are read as empty here too. `${CLAUDE_PLUGIN_ROOT}`, `${CLAUDE_PLUGIN_DATA}` and `${CLAUDE_PROJECT_DIR}` are expanded for plugin servers.
 
 Tools from a plugin-bundled server get rules in the form Claude Code uses for them, `mcp__plugin_<plugin>_<server>__<tool>`, with any character outside `A-Z`, `a-z`, `0-9`, `_` and `-` replaced by `_`.
 

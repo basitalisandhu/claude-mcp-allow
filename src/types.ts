@@ -2,7 +2,7 @@
 export type Scope = 'local' | 'project' | 'user';
 
 /** Where a server definition was read from, in precedence order. */
-export type ServerOrigin = 'local' | 'project' | 'user' | 'plugin';
+export type ServerOrigin = 'managed' | 'local' | 'project' | 'user' | 'plugin';
 
 /** One entry of an `mcpServers` map, after environment variable expansion. */
 export interface RawServerConfig {
