@@ -197,6 +197,36 @@ describe('server discovery', () => {
     }
   });
 
+  it('refuses managedMcpServers entries with control or invisible characters, and warns on the array form', () => {
+    const other = makeFakeEnv();
+    try {
+      const managedDir = path.join(other.home, 'managed');
+      writeJson(path.join(managedDir, 'managed-settings.json'), {
+        managedMcpServers: {
+          bidi: { type: 'http', url: 'https://managed.example/mcp', headers: { 'X-Key': 'abc\u202edef' } },
+          zero: { type: 'http', url: 'https://managed\u200b.example/mcp' },
+          'no-type': { url: 'https://managed.example/mcp' },
+          helper: { type: 'http', url: 'https://managed.example/mcp', headersHelper: '/bin/echo' },
+          clean: { type: 'http', url: 'https://managed.example/mcp' },
+        },
+      });
+      const result = loadServers({ cwd: other.project, home: other.home, env: {}, platform: 'linux', managedConfigDir: managedDir });
+      for (const name of ['bidi', 'zero']) {
+        expect(result.skipped.find((server) => server.name === name)?.reason).toContain('control or invisible formatting characters');
+      }
+      expect(result.skipped.find((server) => server.name === 'no-type')?.reason).toContain('type "http"');
+      expect(result.skipped.find((server) => server.name === 'helper')?.reason).toContain('may not define headersHelper');
+      expect(result.servers.find((server) => server.name === 'clean')?.origin).toBe('managed');
+
+      writeJson(path.join(managedDir, 'managed-settings.json'), { managedMcpServers: [{ name: 'desktop', url: 'https://managed.example/mcp' }] });
+      const arrayForm = loadServers({ cwd: other.project, home: other.home, env: {}, platform: 'linux', managedConfigDir: managedDir });
+      expect(arrayForm.warnings.some((warning) => warning.includes('managedMcpServers is an array'))).toBe(true);
+      expect(arrayForm.servers.some((server) => server.origin === 'managed')).toBe(false);
+    } finally {
+      other.cleanup();
+    }
+  });
+
   it('prefers managed-mcp.json when both managed sources define the same name', () => {
     const other = makeFakeEnv();
     try {

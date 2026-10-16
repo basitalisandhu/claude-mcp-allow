@@ -261,10 +261,40 @@ describe('claude-mcp-allow CLI', () => {
       const gone = await runCli(['--check'], fresh);
       expect(gone.code).toBe(1);
       expect(gone.stdout).toContain('drift  gone: server is no longer configured (1 recorded tools)');
+
+      const goneOnly = await runCli(['--check', '--server', 'gone'], fresh);
+      expect(goneOnly.code).toBe(1);
+      expect(goneOnly.stdout).toContain('drift  gone: server is no longer configured (1 recorded tools)');
     } finally {
       fresh.cleanup();
     }
   }, 120000);
+
+  it('--managed-dir previews a managed policy: exclusive control, provided servers and refused entries', async () => {
+    const fresh = makeFakeEnv();
+    try {
+      const managedDir = path.join(fresh.root, 'policy');
+      writeJson(path.join(managedDir, 'managed-mcp.json'), {
+        mcpServers: { 'org-annotated': { command: 'node', args: [path.join(ROOT, 'tests', 'fixtures', 'annotated-server.mjs')] } },
+      });
+      writeJson(path.join(managedDir, 'managed-settings.json'), {
+        managedMcpServers: { 'org-plain': { type: 'http', url: 'http://intranet.example/mcp' } },
+      });
+      const result = await runCli(['--managed-dir', managedDir], fresh);
+      expect(result.code).toBe(0);
+      expect(result.stderr).toContain(`org-annotated  (managed, ${path.join(managedDir, 'managed-mcp.json')})  7 tools: 2 allow, 5 ask`);
+      expect(result.stderr).toMatch(/warning: annotated \(project, \.mcp\.json\) skipped: managed-mcp\.json has exclusive control/);
+      expect(result.stderr).toContain('org-plain (managed');
+      expect(result.stderr).toContain('managedMcpServers entries must define an HTTPS URL');
+      expect(JSON.parse(result.stdout).permissions.allow).toEqual(['mcp__org-annotated__get_user', 'mcp__org-annotated__list_items']);
+
+      const missing = await runCli(['--managed-dir'], fresh);
+      expect(missing.code).toBe(2);
+      expect(missing.stderr).toContain('--managed-dir needs a value');
+    } finally {
+      fresh.cleanup();
+    }
+  });
 
   it('--check honours the heuristic recorded at generation time', async () => {
     const fresh = makeFakeEnv();

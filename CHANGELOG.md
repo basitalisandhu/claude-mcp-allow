@@ -6,9 +6,21 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+## [0.3.0] - 2026-10-16
+
 ### Added
 
 - Load organisation-provided MCP servers from the platform `managed-mcp.json` and `managedMcpServers` setting with managed precedence and origin reporting.
+- `--managed-dir <dir>` reads `managed-mcp.json` and `managed-settings.json` from a folder instead of the platform policy directory, so a policy can be previewed before it is deployed.
+- README: a quick start and sample report on the first screen, and an "Organisation-managed servers" section with a worked policy example.
+
+### Changed
+
+- `managedMcpServers` entries containing control or invisible formatting characters in any key or value are refused, as Claude Code refuses them, and the Claude Desktop array form of the setting is reported in a warning instead of being ignored silently.
+
+### Fixed
+
+- `--check --server <name>` for a server that is recorded in the settings file but no longer configured reported `ok` and exited 0; it now reports the server as drift and exits 1.
 
 ## [0.2.0] - 2026-10-09
 
@@ -49,7 +61,8 @@ First release. Published to two registries on GitHub Packages, using only the wo
 - `release.yml` (npmjs.com) runs only when the repository variable `NPMJS_PUBLISH` is `true` and passes `--registry https://registry.npmjs.org`.
 - Renamed the umbrella project from Hisar to Masoon; links, names and identifiers updated.
 
-[Unreleased]: https://github.com/basitalisandhu/claude-mcp-allow/compare/v0.2.0...HEAD
+[Unreleased]: https://github.com/basitalisandhu/claude-mcp-allow/compare/v0.3.0...HEAD
+[0.3.0]: https://github.com/basitalisandhu/claude-mcp-allow/compare/v0.2.0...v0.3.0
 [0.2.0]: https://github.com/basitalisandhu/claude-mcp-allow/compare/v0.1.1...v0.2.0
 [0.1.1]: https://github.com/basitalisandhu/claude-mcp-allow/compare/v0.1.0...v0.1.1
 [0.1.0]: https://github.com/basitalisandhu/claude-mcp-allow/releases/tag/v0.1.0

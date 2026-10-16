@@ -177,6 +177,23 @@ function containsInterpolation(value: unknown): boolean {
   return false;
 }
 
+/**
+ * Control characters (C0, DEL, C1) and invisible formatting characters
+ * (zero-width spaces and joiners, bidirectional overrides and isolates, the
+ * word joiner and the byte order mark), which Claude Code refuses in
+ * `managedMcpServers` keys and values.
+ */
+const HIDDEN_CHARACTER_RE = /[\u0000-\u001f\u007f-\u009f\u00ad\u061c\u180e\u200b-\u200f\u202a-\u202e\u2060-\u2064\u2066-\u206f\ufeff]/;
+
+function containsHiddenCharacter(value: unknown): boolean {
+  if (typeof value === 'string') return HIDDEN_CHARACTER_RE.test(value);
+  if (Array.isArray(value)) return value.some(containsHiddenCharacter);
+  if (value && typeof value === 'object') {
+    return Object.entries(value as Record<string, unknown>).some(([key, entry]) => containsHiddenCharacter(key) || containsHiddenCharacter(entry));
+  }
+  return false;
+}
+
 function managedSettingsConfig(name: string, value: unknown): { config?: RawServerConfig; reason?: string } {
   if (!/^[A-Za-z0-9_-]+$/.test(name)) {
     return { reason: 'managedMcpServers names may contain only letters, numbers, hyphens and underscores' };
@@ -185,6 +202,9 @@ function managedSettingsConfig(name: string, value: unknown): { config?: RawServ
     return { reason: 'managedMcpServers entries must be JSON objects' };
   }
   const raw = value as RawServerConfig;
+  if (containsHiddenCharacter(raw)) {
+    return { reason: 'managedMcpServers entries may not contain control or invisible formatting characters' };
+  }
   for (const key of ['command', 'args', 'env', 'headersHelper']) {
     if (key in raw) return { reason: `managedMcpServers entries may not define ${key}` };
   }
@@ -322,6 +342,11 @@ export function loadServers(opts: LoadOptions): LoadResult {
 
   const managedSettings = readManaged ? readJsonFile(paths.managedSettings, warnings) : undefined;
   const managedSettingsServers = managedSettings?.managedMcpServers;
+  if (Array.isArray(managedSettingsServers)) {
+    warnings.push(
+      `${paths.managedSettings}: managedMcpServers is an array (the Claude Desktop form); Claude Code accepts only an object keyed by server name, so it is ignored`,
+    );
+  }
   const managedSettingsEntries = managedSettingsServers && typeof managedSettingsServers === 'object' && !Array.isArray(managedSettingsServers)
     ? Object.entries(managedSettingsServers as Record<string, unknown>)
     : [];

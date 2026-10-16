@@ -6,6 +6,26 @@ Generate `permissions.allow` and `permissions.ask` rules for every MCP tool Clau
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 [![Node 20+](https://img.shields.io/badge/node-20%2B-blue.svg)](package.json)
 
+It is for people who use Claude Code with MCP servers and want read-only tools to stop prompting without allowing everything, and for teams who commit `.claude/settings.json` and want CI to notice when a server's annotations change.
+
+## Quick start
+
+```bash
+npx @basitalisandhu/claude-mcp-allow            # print the proposed rules, change nothing
+npx @basitalisandhu/claude-mcp-allow --diff --write
+npx @basitalisandhu/claude-mcp-allow --check    # later, or in CI: exit 1 on drift
+```
+
+(The npm package is on GitHub Packages, which needs a one-off `~/.npmrc` line; see [Install](#install).) For a server that marks its tools, the report looks like this:
+
+```text
+annotated  (project, .mcp.json)  7 tools: 2 allow, 5 ask
+  allow  get_user       readOnlyHint is true
+  allow  list_items     readOnlyHint is true
+  ask    delete_item    destructiveHint is true
+  ask    update_item    annotated but not marked read-only
+```
+
 ## The problem
 
 Claude Code asks before every MCP tool call unless a permission rule covers it. Its permission engine does not read MCP tool annotations: the request to auto-allow `readOnlyHint` tools and keep prompting for `destructiveHint` ones ([anthropics/claude-code#87452](https://github.com/anthropics/claude-code/issues/87452)) was closed as not planned, and on Claude Code on the web the connector prompt offers only "Allow once", so read-only tools ask on every call and unattended runs stall ([anthropics/claude-code#99112](https://github.com/anthropics/claude-code/issues/99112)). The [permissions docs](https://code.claude.com/docs/en/permissions) give you the rule syntax (`mcp__<server>`, `mcp__<server>__<tool>`, and `mcp__<server>__*` only after a literal server prefix) and leave the rule writing to you. So people hand-roll hooks that guess by verb, or allow a whole server, or keep clicking.
@@ -35,7 +55,7 @@ GitHub's npm registry asks for a token even to install public packages. That is 
 
 ```bash
 npx @basitalisandhu/claude-mcp-allow                    # run without installing
-npm install -g @basitalisandhu/claude-mcp-allow@0.2.0   # or install the claude-mcp-allow command
+npm install -g @basitalisandhu/claude-mcp-allow@0.3.0   # or install the claude-mcp-allow command
 ```
 
 ### Container image
@@ -43,7 +63,7 @@ npm install -g @basitalisandhu/claude-mcp-allow@0.2.0   # or install the claude-
 The image is built for `linux/amd64` and `linux/arm64`, runs as the non-root `node` user (home `/home/node`), and is tagged with the version and `latest`; pin the version. The working directory is `/work`, so mount the project there:
 
 ```bash
-docker run --rm -v "$PWD:/work" ghcr.io/basitalisandhu/claude-mcp-allow:0.2.0 --diff
+docker run --rm -v "$PWD:/work" ghcr.io/basitalisandhu/claude-mcp-allow:0.3.0 --diff
 ```
 
 The container sees only what you mount. To include user-scope servers, also mount `~/.claude.json` at `/home/node/.claude.json`. Stdio servers are started inside the container, so only servers whose command exists in the image (Node.js is available) can be reached; HTTP servers work as long as the container can reach them. For anything else, run the npm package on the host.
@@ -51,10 +71,10 @@ The container sees only what you mount. To include user-scope servers, also moun
 The image is signed with cosign (keyless) and carries a build provenance attestation; an SPDX SBOM is attached to the GitHub release. To check it before running it:
 
 ```bash
-cosign verify ghcr.io/basitalisandhu/claude-mcp-allow:0.2.0 \
+cosign verify ghcr.io/basitalisandhu/claude-mcp-allow:0.3.0 \
   --certificate-identity-regexp '^https://github.com/basitalisandhu/claude-mcp-allow/\.github/workflows/publish-github-packages\.yml@refs/tags/v' \
   --certificate-oidc-issuer https://token.actions.githubusercontent.com
-gh attestation verify oci://ghcr.io/basitalisandhu/claude-mcp-allow:0.2.0 --owner basitalisandhu
+gh attestation verify oci://ghcr.io/basitalisandhu/claude-mcp-allow:0.3.0 --owner basitalisandhu
 ```
 
 To build the image from a checkout: `docker build -t claude-mcp-allow .`
@@ -70,7 +90,7 @@ node dist/cli.js --help
 ## Usage
 
 ```text
-claude-mcp-allow [--cwd dir] [--scope local|project|user] [--heuristic] [--write] [--diff] [--check] [--server name] [--timeout ms]
+claude-mcp-allow [--cwd dir] [--scope local|project|user] [--heuristic] [--write] [--diff] [--prune] [--check] [--server name] [--timeout ms] [--managed-dir dir]
 ```
 
 | Flag | What it does |
@@ -84,6 +104,7 @@ claude-mcp-allow [--cwd dir] [--scope local|project|user] [--heuristic] [--write
 | `--check` | Reconnect to every server recorded in the settings file, recompute the annotation hashes, and exit 1 on drift. Requires a file written by `--write`. |
 | `--server <name>` | Only this server. Repeatable. Matches the configured name, `plugin:<plugin>:<server>` for plugin servers, or the server segment of the rule. |
 | `--timeout <ms>` | Per-server limit for connecting and for `tools/list`. Default 20000. |
+| `--managed-dir <dir>` | Read `managed-mcp.json` and `managed-settings.json` from `<dir>` instead of the platform policy directory, so an administrator can preview a policy before deploying it. See [Organisation-managed servers](#organisation-managed-servers). |
 | `-h`, `--help`, `-V`, `--version` | The usual. |
 
 Exit codes: 0 success, 1 drift found by `--check`, 2 usage or configuration error (an unknown flag, a settings file that is not valid JSON, `--check` without a marker).
@@ -102,7 +123,51 @@ The tool reads the same places Claude Code does, in the documented precedence, a
 | 3 | user scope | `~/.claude.json`, top-level `mcpServers` |
 | 4 | enabled plugins | `.mcp.json` at each plugin root and `mcpServers` in its `.claude-plugin/plugin.json`, found through `~/.claude/plugins/installed_plugins.json` and `enabledPlugins` in your settings files |
 
-Organisation-managed servers use `origin: "managed"` and take precedence by name. A valid `managed-mcp.json` has exclusive control, while `managedMcpServers` accepts only literal, HTTPS remote definitions; users may still disable either kind with `disabledMcpServers`. Connectors fetched from claude.ai are not read. `CLAUDE_CONFIG_DIR` moves `~/.claude` (settings and plugins; `.claude.json` is read from there when it exists) and `CLAUDE_CODE_PLUGIN_CACHE_DIR` moves the plugins root. Servers listed in `disabledMcpjsonServers` or `disabledMcpServers` are skipped. `${VAR}` and `${VAR:-default}` are expanded in `command`, `args`, `env`, `url` and `headers`; an unset variable without a default is left as written with a warning, and the credential variables Claude Code reads as empty in a remote server's `url` and `headers` (such as `ANTHROPIC_API_KEY` and `NPM_TOKEN`) are read as empty here too. `${CLAUDE_PLUGIN_ROOT}`, `${CLAUDE_PLUGIN_DATA}` and `${CLAUDE_PROJECT_DIR}` are expanded for plugin servers.
+Organisation-managed servers are reported with origin `managed`; the rules for them are under [Organisation-managed servers](#organisation-managed-servers). Connectors fetched from claude.ai are not read. `CLAUDE_CONFIG_DIR` moves `~/.claude` (settings and plugins; `.claude.json` is read from there when it exists) and `CLAUDE_CODE_PLUGIN_CACHE_DIR` moves the plugins root. Servers listed in `disabledMcpjsonServers` or `disabledMcpServers` are skipped. `${VAR}` and `${VAR:-default}` are expanded in `command`, `args`, `env`, `url` and `headers`; an unset variable without a default is left as written with a warning, and the credential variables Claude Code reads as empty in a remote server's `url` and `headers` (such as `ANTHROPIC_API_KEY` and `NPM_TOKEN`) are read as empty here too. `${CLAUDE_PLUGIN_ROOT}`, `${CLAUDE_PLUGIN_DATA}` and `${CLAUDE_PROJECT_DIR}` are expanded for plugin servers.
+
+### Organisation-managed servers
+
+Claude Code has two ways for an organisation to provide MCP servers, and this tool applies the [documented rules](https://code.claude.com/docs/en/managed-mcp) for both:
+
+- **`managed-mcp.json`** has exclusive control. When the file exists and parses, only its servers and the `managedMcpServers` entries load; servers from `.mcp.json`, `~/.claude.json` and plugins are reported as skipped. Its entries may use `command`, `args`, `env` and `${VAR}` like any `.mcp.json`.
+- **`managedMcpServers`** in `managed-settings.json` adds remote servers alongside the user's own. An entry is refused, with the reason in a warning, unless its `type` is `http`, `sse` or `streamable-http`, its `url` is `https://`, it has no `command`, `args`, `env` or `headersHelper`, it uses no `${VAR}` reference, its name uses only letters, numbers, hyphens and underscores, and no key or value contains a control or invisible formatting character. The array form used by Claude Desktop's setting of the same name is ignored with a warning.
+- When both define the same name, the `managed-mcp.json` entry wins and the other is reported as shadowed. A managed server takes precedence over a local, project or user server of the same name, and a user can still turn one off with `disabledMcpServers`.
+
+The files are read from `/Library/Application Support/ClaudeCode` on macOS, `/etc/claude-code` on Linux and WSL, and `C:\Program Files\ClaudeCode` on Windows. To try a policy before it reaches anyone's machine, put the two files in a folder and pass `--managed-dir`. With this policy:
+
+```jsonc
+// policy/managed-mcp.json
+{ "mcpServers": { "annotated": { "command": "node", "args": ["<clone>/tests/fixtures/annotated-server.mjs"] } } }
+
+// policy/managed-settings.json
+{
+  "managedMcpServers": {
+    "annotated": { "type": "http", "url": "https://mcp.example.com/annotated" },
+    "intranet": { "type": "http", "url": "http://intranet.example.com/mcp" },
+    "tenant": { "type": "http", "url": "https://${TENANT}.example.com/mcp" }
+  }
+}
+```
+
+a project whose `.mcp.json` defines the `unannotated` fixture gives this report on stderr (absolute paths shortened to `/demo`):
+
+```text
+$ claude-mcp-allow --managed-dir ../policy
+note: annotated from /demo/policy/managed-settings.json is shadowed by the managed definition (/demo/policy/managed-mcp.json)
+warning: intranet (managed, /demo/policy/managed-settings.json) skipped: managedMcpServers entries must define an HTTPS URL
+warning: tenant (managed, /demo/policy/managed-settings.json) skipped: managedMcpServers entries must use literal values without ${VAR} references
+warning: unannotated (project, .mcp.json) skipped: managed-mcp.json has exclusive control
+annotated  (managed, /demo/policy/managed-mcp.json)  7 tools: 2 allow, 5 ask
+  allow  get_user       readOnlyHint is true
+  allow  list_items     readOnlyHint is true
+  ask    delete_item    destructiveHint is true
+  ask    update_item    annotated but not marked read-only
+  ask    read_and_wipe  destructiveHint is true (readOnlyHint is also true; the destructive hint wins)
+  ask    grant_access   _meta["anthropic/requiresUserInteraction"] is true; Claude Code prompts on every call
+  ask    get_status     no annotations
+```
+
+The rules on stdout are then the two `allow` and five `ask` rules for `annotated` only. `allowedMcpServers` and `deniedMcpServers` are not evaluated.
 
 Tools from a plugin-bundled server get rules in the form Claude Code uses for them, `mcp__plugin_<plugin>_<server>__<tool>`, with any character outside `A-Z`, `a-z`, `0-9`, `_` and `-` replaced by `_`.
 
@@ -119,7 +184,7 @@ Rules are appended to `permissions.allow` and `permissions.ask`, and a sibling k
 
 ```json
 "claudeMcpAllow": {
-  "generatedBy": "claude-mcp-allow 0.2.0",
+  "generatedBy": "claude-mcp-allow 0.3.0",
   "generatedAt": "2026-10-03T22:38:08.944Z",
   "heuristic": false,
   "servers": {
