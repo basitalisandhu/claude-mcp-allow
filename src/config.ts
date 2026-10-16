@@ -107,11 +107,56 @@ interface SettingsSummary {
   enabledPlugins: Record<string, boolean>;
   disabledMcpjsonServers: Set<string>;
   disabledMcpServers: Set<string>;
+  deniedMcpServers: DeniedMcpServerEntry[];
+}
+
+/**
+ * One `deniedMcpServers` entry: it names a server, a stdio command and its
+ * arguments, or a remote URL. Matchers follow
+ * https://code.claude.com/docs/en/managed-mcp#match-servers-by-url-command-or-name
+ */
+type DeniedMcpServerEntry =
+  | { serverName: string }
+  | { serverCommand: string[] }
+  | { serverUrl: string };
+
+function parseDeniedMcpServers(value: unknown, file: string, warnings: string[]): DeniedMcpServerEntry[] {
+  if (value === undefined) return [];
+  if (!Array.isArray(value)) {
+    warnings.push(`${file}: deniedMcpServers must be an array; ignored`);
+    return [];
+  }
+  const entries: DeniedMcpServerEntry[] = [];
+  for (const item of value) {
+    if (!item || typeof item !== 'object' || Array.isArray(item)) continue;
+    const entry = item as Record<string, unknown>;
+    if (typeof entry.serverName === 'string' && entry.serverName !== '') {
+      entries.push({ serverName: entry.serverName });
+      continue;
+    }
+    if (Array.isArray(entry.serverCommand) && entry.serverCommand.every((part) => typeof part === 'string')) {
+      entries.push({ serverCommand: entry.serverCommand });
+      continue;
+    }
+    if (typeof entry.serverUrl === 'string' && entry.serverUrl !== '') {
+      if (entry.serverUrl.includes('*')) {
+        warnings.push(`${file}: deniedMcpServers entry "${entry.serverUrl}": wildcard entries are not evaluated yet; skipped`);
+        continue;
+      }
+      entries.push({ serverUrl: entry.serverUrl });
+    }
+  }
+  return entries;
 }
 
 /** The few settings keys this tool honours, merged user < project < local. */
 function readSettingsSummary(paths: Paths, warnings: string[]): SettingsSummary {
-  const summary: SettingsSummary = { enabledPlugins: {}, disabledMcpjsonServers: new Set(), disabledMcpServers: new Set() };
+  const summary: SettingsSummary = {
+    enabledPlugins: {},
+    disabledMcpjsonServers: new Set(),
+    disabledMcpServers: new Set(),
+    deniedMcpServers: [],
+  };
   for (const file of [paths.userSettings, paths.projectSettings, paths.localSettings]) {
     const data = readJsonFile(file, warnings);
     if (!data) continue;
@@ -123,8 +168,43 @@ function readSettingsSummary(paths: Paths, warnings: string[]): SettingsSummary 
     }
     for (const name of stringList(data.disabledMcpjsonServers)) summary.disabledMcpjsonServers.add(name);
     for (const name of stringList(data.disabledMcpServers)) summary.disabledMcpServers.add(name);
+    summary.deniedMcpServers.push(...parseDeniedMcpServers(data.deniedMcpServers, file, warnings));
   }
   return summary;
+}
+
+/**
+ * True when a `serverUrl` entry matches a configured URL. Only entries without
+ * `*` are evaluated (the caller skips wildcards with a warning), so this covers
+ * the documented exact rules: hostnames compare case-insensitively, a trailing
+ * FQDN dot is ignored, a pattern with no path matches any path, and a pattern
+ * with no port matches the scheme's default port only.
+ */
+function matchesServerUrl(pattern: string, url: string): boolean {
+  let entry: URL;
+  let target: URL;
+  try {
+    entry = new URL(pattern);
+    target = new URL(url);
+  } catch {
+    return pattern === url;
+  }
+  if (entry.protocol.toLowerCase() !== target.protocol.toLowerCase()) return false;
+  if (entry.hostname.replace(/\.$/, '') !== target.hostname.replace(/\.$/, '')) return false;
+  if (entry.port !== target.port) return false;
+  return entry.pathname === '/' || entry.pathname === target.pathname;
+}
+
+function matchesServerCommand(entry: string[], config: RawServerConfig): boolean {
+  if (typeof config.command !== 'string') return false;
+  const actual = [config.command, ...(config.args ?? [])];
+  return actual.length === entry.length && actual.every((part, index) => part === entry[index]);
+}
+
+function matchesDenied(entry: DeniedMcpServerEntry, name: string, displayName: string, config: RawServerConfig): boolean {
+  if ('serverName' in entry) return entry.serverName === name || entry.serverName === displayName;
+  if ('serverCommand' in entry) return matchesServerCommand(entry.serverCommand, config);
+  return typeof config.url === 'string' && matchesServerUrl(entry.serverUrl, config.url);
 }
 
 function sanitizeSegment(value: string): string {
@@ -341,6 +421,9 @@ export function loadServers(opts: LoadOptions): LoadResult {
   }
 
   const managedSettings = readManaged ? readJsonFile(paths.managedSettings, warnings) : undefined;
+  if (managedSettings) {
+    settings.deniedMcpServers.push(...parseDeniedMcpServers(managedSettings.deniedMcpServers, paths.managedSettings, warnings));
+  }
   const managedSettingsServers = managedSettings?.managedMcpServers;
   if (Array.isArray(managedSettingsServers)) {
     warnings.push(
@@ -400,11 +483,15 @@ export function loadServers(opts: LoadOptions): LoadResult {
       skipped.push({ name: displayName, ruleServer, origin: c.origin, source: c.source, reason: 'managed-mcp.json has exclusive control' });
       continue;
     }
+    const { config, missing } = c.literal ? { config: c.raw, missing: [] } : expandServerConfig(c.raw, opts.env, c.extra);
+    if (settings.deniedMcpServers.some((entry) => matchesDenied(entry, c.name, displayName, config))) {
+      skipped.push({ name: displayName, ruleServer, origin: c.origin, source: c.source, reason: 'blocked by deniedMcpServers' });
+      continue;
+    }
     if (c.origin !== 'plugin' && settings.disabledMcpServers.has(c.name)) {
       skipped.push({ name: c.name, ruleServer, origin: c.origin, source: c.source, reason: 'listed in disabledMcpServers' });
       continue;
     }
-    const { config, missing } = c.literal ? { config: c.raw, missing: [] } : expandServerConfig(c.raw, opts.env, c.extra);
     const serverWarnings = missing.map((v) => `\${${v}} is not set and has no default; left as written`);
     const server: ResolvedServer = {
       name: c.name,

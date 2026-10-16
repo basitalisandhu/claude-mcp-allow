@@ -123,7 +123,7 @@ The tool reads the same places Claude Code does, in the documented precedence, a
 | 3 | user scope | `~/.claude.json`, top-level `mcpServers` |
 | 4 | enabled plugins | `.mcp.json` at each plugin root and `mcpServers` in its `.claude-plugin/plugin.json`, found through `~/.claude/plugins/installed_plugins.json` and `enabledPlugins` in your settings files |
 
-Organisation-managed servers are reported with origin `managed`; the rules for them are under [Organisation-managed servers](#organisation-managed-servers). Connectors fetched from claude.ai are not read. `CLAUDE_CONFIG_DIR` moves `~/.claude` (settings and plugins; `.claude.json` is read from there when it exists) and `CLAUDE_CODE_PLUGIN_CACHE_DIR` moves the plugins root. Servers listed in `disabledMcpjsonServers` or `disabledMcpServers` are skipped. `${VAR}` and `${VAR:-default}` are expanded in `command`, `args`, `env`, `url` and `headers`; an unset variable without a default is left as written with a warning, and the credential variables Claude Code reads as empty in a remote server's `url` and `headers` (such as `ANTHROPIC_API_KEY` and `NPM_TOKEN`) are read as empty here too. `${CLAUDE_PLUGIN_ROOT}`, `${CLAUDE_PLUGIN_DATA}` and `${CLAUDE_PROJECT_DIR}` are expanded for plugin servers.
+Organisation-managed servers are reported with origin `managed`; the rules for them are under [Organisation-managed servers](#organisation-managed-servers). Connectors fetched from claude.ai are not read. `CLAUDE_CONFIG_DIR` moves `~/.claude` (settings and plugins; `.claude.json` is read from there when it exists) and `CLAUDE_CODE_PLUGIN_CACHE_DIR` moves the plugins root. Servers listed in `disabledMcpjsonServers` or `disabledMcpServers` are skipped. A server that matches a `deniedMcpServers` entry from user, project, local or managed settings is skipped as `blocked by deniedMcpServers`: entries match a server by name, by command and arguments (exact, in order), or by a `serverUrl` without `*`. Wildcard `serverUrl` entries are not evaluated yet and each one is named in a warning. `${VAR}` and `${VAR:-default}` are expanded in `command`, `args`, `env`, `url` and `headers`; an unset variable without a default is left as written with a warning, and the credential variables Claude Code reads as empty in a remote server's `url` and `headers` (such as `ANTHROPIC_API_KEY` and `NPM_TOKEN`) are read as empty here too. `${CLAUDE_PLUGIN_ROOT}`, `${CLAUDE_PLUGIN_DATA}` and `${CLAUDE_PROJECT_DIR}` are expanded for plugin servers.
 
 ### Organisation-managed servers
 
@@ -167,7 +167,7 @@ annotated  (managed, /demo/policy/managed-mcp.json)  7 tools: 2 allow, 5 ask
   ask    get_status     no annotations
 ```
 
-The rules on stdout are then the two `allow` and five `ask` rules for `annotated` only. `allowedMcpServers` and `deniedMcpServers` are not evaluated.
+The rules on stdout are then the two `allow` and five `ask` rules for `annotated` only. `allowedMcpServers` is not evaluated; a `deniedMcpServers` match would skip the server.
 
 Tools from a plugin-bundled server get rules in the form Claude Code uses for them, `mcp__plugin_<plugin>_<server>__<tool>`, with any character outside `A-Z`, `a-z`, `0-9`, `_` and `-` replaced by `_`.
 
@@ -176,6 +176,7 @@ Tools from a plugin-bundled server get rules in the form Claude Code uses for th
 - Entries with an `oauth` key, and remote servers that answer 401 or 403: Claude Code completes the sign-in through `/mcp`; this tool does not run OAuth flows. Each one is named in a warning.
 - `ws` and `sdk` transports, and entries with neither `command` nor `url`.
 - Plugin entries that reference `${user_config.*}`, which this tool does not resolve.
+- Servers that match a `deniedMcpServers` entry by name, by command and arguments, or by a URL without `*`; a `serverUrl` entry containing `*` is not evaluated yet and is named in a warning.
 - A server that fails to start or does not answer within `--timeout` is reported as failed, and the rest continue.
 
 ### What `--write` puts in the file

@@ -153,6 +153,82 @@ describe('server discovery', () => {
     }
   });
 
+  it('honours deniedMcpServers by name, command and URL from any settings scope', () => {
+    const other = makeFakeEnv({
+      userSettings: { deniedMcpServers: [{ serverName: 'named-blocked' }] },
+      projectSettings: { deniedMcpServers: [{ serverCommand: ['node', 'blocked.mjs', '--flag'] }] },
+      localSettings: { deniedMcpServers: [{ serverUrl: 'https://blocked.example/mcp' }] },
+    });
+    try {
+      writeJson(path.join(other.project, '.mcp.json'), {
+        mcpServers: {
+          'named-blocked': { command: 'node', args: [UNANNOTATED] },
+          'named-near-miss': { command: 'node', args: [UNANNOTATED] },
+          'command-blocked': { command: 'node', args: ['blocked.mjs', '--flag'] },
+          'command-near-miss': { command: 'node', args: ['--flag', 'blocked.mjs'] },
+          'url-blocked': { type: 'http', url: 'https://Blocked.Example/mcp' },
+          'url-path-near-miss': { type: 'http', url: 'https://blocked.example/MCP' },
+          'url-port-near-miss': { type: 'http', url: 'https://blocked.example:8443/mcp' },
+        },
+      });
+
+      const result = loadServers({ cwd: other.project, home: other.home, env: {}, platform: 'linux' });
+
+      for (const name of ['named-blocked', 'command-blocked', 'url-blocked']) {
+        expect(result.servers.map((server) => server.name)).not.toContain(name);
+        expect(result.skipped.find((server) => server.name === name)).toMatchObject({
+          origin: 'project',
+          source: '.mcp.json',
+          reason: 'blocked by deniedMcpServers',
+        });
+      }
+      const kept = result.servers.map((server) => server.name);
+      expect(kept).toEqual(expect.arrayContaining(['named-near-miss', 'command-near-miss', 'url-path-near-miss', 'url-port-near-miss']));
+    } finally {
+      other.cleanup();
+    }
+  });
+
+  it('denies managed servers by denylist entries from managed and user settings, and warns on wildcard entries', () => {
+    const other = makeFakeEnv();
+    try {
+      const managedDir = path.join(other.home, 'managed');
+      writeJson(path.join(managedDir, 'managed-mcp.json'), {
+        mcpServers: {
+          'managed-denied': { command: 'node', args: ['managed.mjs'] },
+          'user-denied-managed': { type: 'http', url: 'https://keep.example/mcp' },
+          'managed-kept': { command: 'node', args: [UNANNOTATED] },
+        },
+      });
+      writeJson(path.join(managedDir, 'managed-settings.json'), {
+        deniedMcpServers: [{ serverName: 'managed-denied' }, { serverUrl: 'https://*.internal.example/*' }],
+      });
+      writeJson(path.join(other.home, '.claude', 'settings.json'), {
+        deniedMcpServers: [{ serverName: 'user-denied-managed' }],
+      });
+
+      const result = loadServers({
+        cwd: other.project,
+        home: other.home,
+        env: {},
+        platform: 'linux',
+        managedConfigDir: managedDir,
+      });
+
+      for (const name of ['managed-denied', 'user-denied-managed']) {
+        expect(result.servers.map((server) => server.name)).not.toContain(name);
+        expect(result.skipped.find((server) => server.name === name)).toMatchObject({
+          origin: 'managed',
+          reason: 'blocked by deniedMcpServers',
+        });
+      }
+      expect(result.servers.find((server) => server.name === 'managed-kept')?.origin).toBe('managed');
+      expect(result.warnings.some((warning) => warning.includes('wildcard entries are not evaluated yet'))).toBe(true);
+    } finally {
+      other.cleanup();
+    }
+  });
+
   it('falls back to normal discovery when managed-mcp.json cannot be parsed', () => {
     const other = makeFakeEnv();
     try {

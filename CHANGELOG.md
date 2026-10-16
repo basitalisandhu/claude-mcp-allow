@@ -6,6 +6,10 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+### Added
+
+- Honour `deniedMcpServers` from user, project, local and managed settings: a server matched by name, by command and arguments, or by a URL without `*` is skipped as `blocked by deniedMcpServers`, including organisation-managed servers. `serverUrl` entries containing `*` are not evaluated yet and each one is named in a warning.
+
 ## [0.3.0] - 2026-10-16
 
 ### Added
