@@ -24,24 +24,7 @@ and audits want the whole report as one JSON document.
 - Tests in `tests/cli.test.ts` parse both documents and assert the shape; the text goldens
   are unchanged.
 
-## 2. Read `managed-mcp.json` servers
-
-**Context.** `src/config.ts` reads local, project, user and plugin servers. Claude Code also
-loads servers an organisation deploys through `managed-mcp.json` and the
-`managedMcpServers` setting, which rank above every other scope. Rules for those tools are
-currently never generated.
-
-**Acceptance criteria.**
-
-- Servers from the managed MCP file for the platform (see the Claude Code docs page on
-  managed MCP for the paths) and from `managedMcpServers` in a managed settings file are
-  loaded with `origin: "managed"`, placed first in precedence, and matched by name against
-  the other scopes as the docs describe.
-- A fixture under the fake home exercises one managed server shadowing a user server.
-- README "Where servers are read from" lists the new source; `managed` is added to the
-  `ServerOrigin` type and to the report output.
-
-## 3. Report tools whose names contradict their annotations
+## 2. Report tools whose names contradict their annotations
 
 **Context.** A tool named `delete_user` with `readOnlyHint: true` is suspicious: either the
 annotation is wrong or the name is. The tool currently allows it, as the brief requires, but
@@ -57,7 +40,7 @@ says nothing.
 - Tests in `tests/classify.test.ts` and one CLI test with a fixture tool named
   `delete_but_readonly`.
 
-## 4. Support `headersHelper` for HTTP servers
+## 3. Support `headersHelper` for HTTP servers
 
 **Context.** Claude Code can run a `headersHelper` command whose stdout provides headers for
 an `http` or `sse` server. The loader copies the field but `src/connect.ts` ignores it, so
@@ -72,20 +55,20 @@ servers that only authenticate through a helper are reported as answering 401.
 - Never run a helper from a plugin entry that references `${user_config.*}` (already skipped).
 - A test with a helper script under `tests/fixtures/` against the HTTP fixture.
 
-## 5. Add a `--prune` flag for servers that no longer exist
+## 4. Skip servers matched by `deniedMcpServers`
 
-**Context.** When a server is removed from every configuration file, the rules and marker
-entries this tool wrote for it stay in the settings file and `--check` reports the server as
-no longer configured. The merge deliberately never removes them, because user-scope settings
-can hold servers from other projects.
+**Context.** Claude Code never loads a server that matches a `deniedMcpServers` entry from
+any settings file, managed servers included
+([docs](https://code.claude.com/docs/en/managed-mcp#how-a-server-is-evaluated)). This tool
+still connects to such a server and writes rules for it. `src/config.ts` already reads the
+settings files in `readSettingsSummary`.
 
 **Acceptance criteria.**
 
-- `--write --prune` removes the `allow` and `ask` rules and the marker entry for every
-  server recorded in the marker that is not configured for the current `--cwd`, and prints
-  one `pruned <server>: N rules` line per server on stderr. Without `--prune` nothing changes.
-- `--diff --prune` lists those removals as `- allow` and `- ask` lines.
-- Rules the tool did not write (not in the marker) are never removed, even for a pruned
-  server.
-- Tests in `tests/settings.test.ts` and `tests/cli.test.ts`, including the user-scope case
-  where a server from another project must survive a run without `--prune`.
+- `deniedMcpServers` entries are merged from user, project, local and managed settings.
+- A server matching a `serverName` entry exactly, a `serverCommand` entry (command and
+  arguments, exact and in order) or a `serverUrl` entry with no `*` is skipped with the
+  reason `blocked by deniedMcpServers`. Entries with `*` produce one warning saying they are
+  not evaluated yet.
+- Tests in `tests/config.test.ts` cover each entry kind and a managed server being denied.
+

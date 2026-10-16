@@ -34,6 +34,10 @@ Options:
   --check            Reconnect and exit 1 when annotations drifted from the saved rules
   --server <name>    Only this server (repeatable)
   --timeout <ms>     Connect and tools/list timeout per server (default: 20000)
+  --managed-dir <dir>
+                     Read managed-mcp.json and managed-settings.json from <dir>
+                     instead of the platform policy directory, to preview a
+                     policy before it is deployed
   -h, --help         Show this help
   -V, --version      Show the version
 
@@ -50,6 +54,8 @@ export interface CliOptions {
   check: boolean;
   servers: string[];
   timeoutMs: number;
+  /** Directory holding managed-mcp.json and managed-settings.json; the platform path when undefined. */
+  managedDir?: string;
   help: boolean;
   version: boolean;
 }
@@ -122,6 +128,9 @@ export function parseArgs(argv: string[]): CliOptions {
         opts.timeoutMs = ms;
         break;
       }
+      case '--managed-dir':
+        opts.managedDir = path.resolve(value());
+        break;
       case '-h':
       case '--help':
         opts.help = true;
@@ -209,8 +218,9 @@ export async function main(argv: string[], io = { out: process.stdout, err: proc
 
   const home = os.homedir();
   const env = process.env;
-  const paths = resolvePaths({ cwd: opts.cwd, home, env });
-  const loaded = loadServers({ cwd: opts.cwd, home, env });
+  const loadOptions = { cwd: opts.cwd, home, env, managedConfigDir: opts.managedDir };
+  const paths = resolvePaths(loadOptions);
+  const loaded = loadServers(loadOptions);
   for (const warning of loaded.warnings) log(`warning: ${warning}`);
   if (opts.prune && loaded.warnings.length > 0) {
     log('claude-mcp-allow: refusing --prune because configuration could not be loaded completely');
@@ -238,7 +248,9 @@ export async function main(argv: string[], io = { out: process.stdout, err: proc
       return 2;
     }
     try {
-      const only = opts.servers.length > 0 ? new Set(servers.map((s) => s.ruleServer)) : undefined;
+      // A recorded server that is no longer configured matches no loaded server,
+      // so keep the names as given too: `--check --server gone` must report it.
+      const only = opts.servers.length > 0 ? new Set([...servers.map((s) => s.ruleServer), ...opts.servers]) : undefined;
       const result = await runCheck({
         settings,
         servers: loaded.servers,
