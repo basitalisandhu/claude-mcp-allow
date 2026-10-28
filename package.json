@@ -50,7 +50,8 @@
     "pretest": "npm run build",
     "test": "vitest run",
     "typecheck": "tsc -p tsconfig.json --noEmit",
-    "prepublishOnly": "npm run clean && npm run build && vitest run"
+    "prepublishOnly": "npm run clean && npm run build && vitest run",
+    "prepare": "npm run build"
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.32.1"
