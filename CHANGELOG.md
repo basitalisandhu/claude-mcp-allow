@@ -6,6 +6,18 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+## [0.4.0] - 2026-10-28
+
+### Added
+
+- Runs without a token: `npx github:basitalisandhu/claude-mcp-allow` fetches the source and builds it on install (a `prepare` script). The Quick start uses it; the GitHub Packages npm package still needs a `read:packages` token.
+- A Troubleshooting section in the README with real messages and fixes.
+- Seeded fuzz tests over every configuration and settings file the CLI reads (bad bytes, wrong value types), each run time-limited; a scaling test for the settings merge; a CI job that installs the packed tarball into an empty folder, runs the three quick start commands against the annotated fixture server and compares the README sample.
+
+### Fixed
+
+- Merging a large plan into a settings file was quadratic (`Array.includes` inside the merge loops): 20,000 tools took about 0.85 s, now about 15 ms.
+
 ### Added
 
 - Honour `deniedMcpServers` from user, project, local and managed settings: a server matched by name, by command and arguments, or by a URL without `*` is skipped as `blocked by deniedMcpServers`, including organisation-managed servers. `serverUrl` entries containing `*` are not evaluated yet and each one is named in a warning.
@@ -65,7 +77,8 @@ First release. Published to two registries on GitHub Packages, using only the wo
 - `release.yml` (npmjs.com) runs only when the repository variable `NPMJS_PUBLISH` is `true` and passes `--registry https://registry.npmjs.org`.
 - Renamed the umbrella project from Hisar to Masoon; links, names and identifiers updated.
 
-[Unreleased]: https://github.com/basitalisandhu/claude-mcp-allow/compare/v0.3.0...HEAD
+[Unreleased]: https://github.com/basitalisandhu/claude-mcp-allow/compare/v0.4.0...HEAD
+[0.4.0]: https://github.com/basitalisandhu/claude-mcp-allow/compare/v0.3.0...v0.4.0
 [0.3.0]: https://github.com/basitalisandhu/claude-mcp-allow/compare/v0.2.0...v0.3.0
 [0.2.0]: https://github.com/basitalisandhu/claude-mcp-allow/compare/v0.1.1...v0.2.0
 [0.1.1]: https://github.com/basitalisandhu/claude-mcp-allow/compare/v0.1.0...v0.1.1

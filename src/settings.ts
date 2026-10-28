@@ -201,9 +201,13 @@ export function mergeIntoSettings(file: SettingsFile, input: MergeInput): MergeR
   const keepUnlessStale = (rule: string, previous: Set<string>, next: Set<string>) => !(previous.has(rule) && !next.has(rule));
   const allow = existingAllow.filter((r) => keepUnlessStale(r, previousAllow, newAllow));
   const ask = existingAsk.filter((r) => keepUnlessStale(r, previousAsk, newAsk));
+  // Sets next to the arrays: the arrays keep the order of the file, the sets answer "already there?"
+  // in constant time (Array.includes in these loops made a large plan quadratic).
+  const allowSet = new Set(allow);
+  const askSet = new Set(ask);
   const removed: RuleDelta = {
-    allow: existingAllow.filter((r) => !allow.includes(r)),
-    ask: existingAsk.filter((r) => !ask.includes(r)),
+    allow: existingAllow.filter((r) => !allowSet.has(r)),
+    ask: existingAsk.filter((r) => !askSet.has(r)),
   };
   const added: RuleDelta = { allow: [], ask: [] };
 
@@ -212,17 +216,19 @@ export function mergeIntoSettings(file: SettingsFile, input: MergeInput): MergeR
       warnings.push(`${rule}: classified allow but present in permissions.deny; deny rules win, so it was not added`);
       continue;
     }
-    if (!allow.includes(rule)) {
+    if (!allowSet.has(rule)) {
       allow.push(rule);
+      allowSet.add(rule);
       added.allow.push(rule);
     }
   }
   for (const rule of input.plan.ask) {
-    if (!ask.includes(rule)) {
+    if (!askSet.has(rule)) {
       ask.push(rule);
+      askSet.add(rule);
       added.ask.push(rule);
     }
-    if (allow.includes(rule) && !previousAllow.has(rule)) {
+    if (allowSet.has(rule) && !previousAllow.has(rule)) {
       warnings.push(`${rule}: classified ask but a rule you wrote by hand allows it; the ask rule is evaluated first and prompts`);
     }
   }
@@ -239,8 +245,9 @@ export function mergeIntoSettings(file: SettingsFile, input: MergeInput): MergeR
     for (const tool of report.tools) tools[tool.name] = `${tool.decision}:${tool.hash}`;
     fresh[report.server.ruleServer] = tools;
   }
+  const staleSet = new Set(stale);
   for (const [server, tools] of Object.entries(oldMarker?.servers ?? {})) {
-    if (stale.includes(server)) continue;
+    if (staleSet.has(server)) continue;
     servers[server] = fresh[server] ?? tools;
   }
   for (const [server, tools] of Object.entries(fresh)) {
