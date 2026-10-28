@@ -10,13 +10,15 @@ It is for people who use Claude Code with MCP servers and want read-only tools t
 
 ## Quick start
 
+No install and no token needed; run it from a project whose MCP servers you want rules for:
+
 ```bash
-npx @basitalisandhu/claude-mcp-allow            # print the proposed rules, change nothing
-npx @basitalisandhu/claude-mcp-allow --diff --write
-npx @basitalisandhu/claude-mcp-allow --check    # later, or in CI: exit 1 on drift
+npx github:basitalisandhu/claude-mcp-allow            # print the proposed rules, change nothing
+npx github:basitalisandhu/claude-mcp-allow --diff --write
+npx github:basitalisandhu/claude-mcp-allow --check    # later, or in CI: exit 1 on drift
 ```
 
-(The npm package is on GitHub Packages, which needs a one-off `~/.npmrc` line; see [Install](#install).) For a server that marks its tools, the report looks like this:
+`npx github:` fetches the source from GitHub and builds it on first use (pin a release with `#v0.4.0`). For a server that marks its tools, the report looks like this:
 
 ```text
 annotated  (project, .mcp.json)  7 tools: 2 allow, 5 ask
@@ -40,6 +42,8 @@ Annotations are untrusted hints. The MCP project's own [guidance on tool annotat
 
 Requires Node 20 or newer.
 
+The quickest route needs nothing but Node: `npx github:basitalisandhu/claude-mcp-allow <options>`, as in the [Quick start](#quick-start). The container image below also works without any login.
+
 Every release is published by `publish-github-packages.yml` in two places on GitHub Packages: the npm package `@basitalisandhu/claude-mcp-allow` and the container image `ghcr.io/basitalisandhu/claude-mcp-allow`. The package is not on npmjs.com yet; when it is, it will use the same scoped name.
 
 ### npm from GitHub Packages
@@ -55,7 +59,7 @@ GitHub's npm registry asks for a token even to install public packages. That is 
 
 ```bash
 npx @basitalisandhu/claude-mcp-allow                    # run without installing
-npm install -g @basitalisandhu/claude-mcp-allow@0.3.0   # or install the claude-mcp-allow command
+npm install -g @basitalisandhu/claude-mcp-allow@0.4.0   # or install the claude-mcp-allow command
 ```
 
 ### Container image
@@ -63,7 +67,7 @@ npm install -g @basitalisandhu/claude-mcp-allow@0.3.0   # or install the claude-
 The image is built for `linux/amd64` and `linux/arm64`, runs as the non-root `node` user (home `/home/node`), and is tagged with the version and `latest`; pin the version. The working directory is `/work`, so mount the project there:
 
 ```bash
-docker run --rm -v "$PWD:/work" ghcr.io/basitalisandhu/claude-mcp-allow:0.3.0 --diff
+docker run --rm -v "$PWD:/work" ghcr.io/basitalisandhu/claude-mcp-allow:0.4.0 --diff
 ```
 
 The container sees only what you mount. To include user-scope servers, also mount `~/.claude.json` at `/home/node/.claude.json`. Stdio servers are started inside the container, so only servers whose command exists in the image (Node.js is available) can be reached; HTTP servers work as long as the container can reach them. For anything else, run the npm package on the host.
@@ -71,10 +75,10 @@ The container sees only what you mount. To include user-scope servers, also moun
 The image is signed with cosign (keyless) and carries a build provenance attestation; an SPDX SBOM is attached to the GitHub release. To check it before running it:
 
 ```bash
-cosign verify ghcr.io/basitalisandhu/claude-mcp-allow:0.3.0 \
+cosign verify ghcr.io/basitalisandhu/claude-mcp-allow:0.4.0 \
   --certificate-identity-regexp '^https://github.com/basitalisandhu/claude-mcp-allow/\.github/workflows/publish-github-packages\.yml@refs/tags/v' \
   --certificate-oidc-issuer https://token.actions.githubusercontent.com
-gh attestation verify oci://ghcr.io/basitalisandhu/claude-mcp-allow:0.3.0 --owner basitalisandhu
+gh attestation verify oci://ghcr.io/basitalisandhu/claude-mcp-allow:0.4.0 --owner basitalisandhu
 ```
 
 To build the image from a checkout: `docker build -t claude-mcp-allow .`
@@ -185,7 +189,7 @@ Rules are appended to `permissions.allow` and `permissions.ask`, and a sibling k
 
 ```json
 "claudeMcpAllow": {
-  "generatedBy": "claude-mcp-allow 0.3.0",
+  "generatedBy": "claude-mcp-allow 0.4.0",
   "generatedAt": "2026-10-03T22:38:08.944Z",
   "heuristic": false,
   "servers": {
@@ -328,6 +332,21 @@ drift  annotated: annotations of get_user changed; it is allowed but is no longe
 ```
 
 The second run exits 1, which is what you want from a CI job or a pre-commit hook that guards a committed `.claude/settings.json`.
+
+## Troubleshooting
+
+Each message below is real output. Configuration and usage errors exit with code 2; drift found by `--check` exits with code 1.
+
+| You see | What it means | Fix |
+|---|---|---|
+| `npm error code E401` from `npx @basitalisandhu/claude-mcp-allow` | GitHub Packages asks for a token even for public packages. | Use `npx github:basitalisandhu/claude-mcp-allow`, which needs none, or the container image. |
+| `claude-mcp-allow: no MCP servers configured for <dir>` | No `.mcp.json`, `~/.claude.json` entry, plugin or managed server applies to that directory. | Run it from the project root or pass `--cwd <dir>`; see [Where servers are read from](#where-servers-are-read-from). |
+| `warning: <dir>/.mcp.json: invalid JSON (...); ignored` | The file has a trailing comma, a comment or a cut-off end. | Fix the JSON; Claude Code would not load those servers either. |
+| `x  (project, .mcp.json)  failed: spawn no-such-cmd-zz ENOENT` | The server's `command` is not on your `PATH`. | Install the server, or use the full path in `command`. Its tools get no rules until it lists them. |
+| A server shows `failed: ... timed out` | It did not answer `tools/list` within `--timeout` (20 seconds by default). | Start it once by hand to see why, or raise `--timeout`. |
+| `claude-mcp-allow: .claude/settings.local.json has no claudeMcpAllow marker; run claude-mcp-allow --write first` | `--check` compares with rules this tool wrote; there are none in that file. | Run `--write` with the same `--scope` first. |
+| `claude-mcp-allow: --scope must be local, project or user (got "team")` | Only the three settings files are written. | Pick one; `local` is the default and is not committed. |
+| `--check` reports drift right after a server upgrade | The server changed an annotation, removed a tool, or an allowed tool is no longer read-only. | Review the change, then run `--write` again to record it. |
 
 ## Frequently asked questions
 
